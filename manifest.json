@@ -1,0 +1,138 @@
+{
+  "generated_at": "2026-04-24T11:55:31.380089+00:00",
+  "base_url": "https://espressif.github.io/esp-desktop-buddy/",
+  "asset_base_url": "https://dl.espressif.com/esp-desktop-buddy/assets/",
+  "launchpad_url": "https://espressif.github.io/esp-launchpad/minimal-launchpad/",
+  "source": {
+    "branch": "feat/esp-desktop-buddy",
+    "commit": "adc03b4cd2b4da06d6b4aef12b2f754287b26215"
+  },
+  "apps": [
+    {
+      "app_id": "generic-headless",
+      "app_name": "Desktop Buddy Generic Headless",
+      "config_slug": "desktop-buddy-generic-headless",
+      "description": "Minimal BLE Desktop Buddy firmware for generic ESP32 development boards.",
+      "console_baudrate": 115200,
+      "readme": "desktop-buddy-generic-headless.md",
+      "targets": [
+        {
+          "chip_key": "esp32",
+          "soc_label": "ESP32",
+          "soc_slug": "esp32",
+          "board_name": "Generic Dev Board",
+          "board_slug": "generic-dev-board",
+          "config_path": "configs/desktop-buddy-generic-headless/esp32-generic-dev-board.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32_desktop_buddy_generic_headless.bin"
+        },
+        {
+          "chip_key": "esp32-c2",
+          "soc_label": "ESP32-C2",
+          "soc_slug": "esp32-c2",
+          "board_name": "Generic Dev Board",
+          "board_slug": "generic-dev-board",
+          "config_path": "configs/desktop-buddy-generic-headless/esp32-c2-generic-dev-board.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32c2_desktop_buddy_generic_headless.bin"
+        },
+        {
+          "chip_key": "esp32-c3",
+          "soc_label": "ESP32-C3",
+          "soc_slug": "esp32-c3",
+          "board_name": "Generic Dev Board",
+          "board_slug": "generic-dev-board",
+          "config_path": "configs/desktop-buddy-generic-headless/esp32-c3-generic-dev-board.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32c3_desktop_buddy_generic_headless.bin"
+        },
+        {
+          "chip_key": "esp32-c5",
+          "soc_label": "ESP32-C5",
+          "soc_slug": "esp32-c5",
+          "board_name": "Generic Dev Board",
+          "board_slug": "generic-dev-board",
+          "config_path": "configs/desktop-buddy-generic-headless/esp32-c5-generic-dev-board.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32c5_desktop_buddy_generic_headless.bin"
+        },
+        {
+          "chip_key": "esp32-c6",
+          "soc_label": "ESP32-C6",
+          "soc_slug": "esp32-c6",
+          "board_name": "Generic Dev Board",
+          "board_slug": "generic-dev-board",
+          "config_path": "configs/desktop-buddy-generic-headless/esp32-c6-generic-dev-board.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32c6_desktop_buddy_generic_headless.bin"
+        },
+        {
+          "chip_key": "esp32-c61",
+          "soc_label": "ESP32-C61",
+          "soc_slug": "esp32-c61",
+          "board_name": "Generic Dev Board",
+          "board_slug": "generic-dev-board",
+          "config_path": "configs/desktop-buddy-generic-headless/esp32-c61-generic-dev-board.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32c61_desktop_buddy_generic_headless.bin"
+        },
+        {
+          "chip_key": "esp32-h2",
+          "soc_label": "ESP32-H2",
+          "soc_slug": "esp32-h2",
+          "board_name": "Generic Dev Board",
+          "board_slug": "generic-dev-board",
+          "config_path": "configs/desktop-buddy-generic-headless/esp32-h2-generic-dev-board.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32h2_desktop_buddy_generic_headless.bin"
+        },
+        {
+          "chip_key": "esp32-s3",
+          "soc_label": "ESP32-S3",
+          "soc_slug": "esp32-s3",
+          "board_name": "Generic Dev Board",
+          "board_slug": "generic-dev-board",
+          "config_path": "configs/desktop-buddy-generic-headless/esp32-s3-generic-dev-board.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32s3_desktop_buddy_generic_headless.bin"
+        }
+      ]
+    },
+    {
+      "app_id": "m5-dualkey-headless",
+      "app_name": "Desktop Buddy M5Stack Chain DualKey",
+      "config_slug": "desktop-buddy-m5-dualkey-headless",
+      "description": "Desktop Buddy prompt hardware UI for the M5Stack Chain DualKey.",
+      "console_baudrate": 115200,
+      "readme": "desktop-buddy-m5-dualkey-headless.md",
+      "targets": [
+        {
+          "chip_key": "esp32-s3",
+          "soc_label": "ESP32-S3",
+          "soc_slug": "esp32-s3",
+          "board_name": "M5Stack Chain DualKey",
+          "board_slug": "m5stack-chain-dualkey",
+          "config_path": "configs/desktop-buddy-m5-dualkey-headless/esp32-s3-m5stack-chain-dualkey.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32s3_m5stack_chain_dualkey_desktop_buddy.bin"
+        }
+      ]
+    },
+    {
+      "app_id": "esp-box-3-demo",
+      "app_name": "Desktop Buddy ESP-BOX-3 Demo",
+      "config_slug": "desktop-buddy-esp-box-3-demo",
+      "description": "Desktop Buddy display demo for the ESP32-S3-BOX-3.",
+      "console_baudrate": 115200,
+      "readme": "desktop-buddy-esp-box-3-demo.md",
+      "targets": [
+        {
+          "chip_key": "esp32-s3",
+          "soc_label": "ESP32-S3",
+          "soc_slug": "esp32-s3",
+          "board_name": "ESP32-S3-BOX-3",
+          "board_slug": "esp32-s3-box-3",
+          "config_path": "configs/desktop-buddy-esp-box-3-demo/esp32-s3-box-3.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32s3_box3_desktop_buddy_esp_box_3_demo.bin"
+        }
+      ]
+    }
+  ],
+  "default_selection": {
+    "app_id": "generic-headless",
+    "soc_slug": "esp32",
+    "board_slug": "generic-dev-board",
+    "config_path": "configs/desktop-buddy-generic-headless/esp32-generic-dev-board.toml"
+  }
+}

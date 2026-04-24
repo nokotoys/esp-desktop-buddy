@@ -1,0 +1,13 @@
+esp_toml_version = 1.0
+multipart = true
+chip = "esp32-s3"
+supported_apps = ["Desktop Buddy ESP-BOX-3 Demo"]
+
+[[portConnectionOptions]]
+console_baudrate = 115200
+
+["Desktop Buddy ESP-BOX-3 Demo"]
+readme.text = "https://espressif.github.io/esp-desktop-buddy/desktop-buddy-esp-box-3-demo.md"
+console_baudrate = 115200
+image.esp32-s3.parts = ["https://dl.espressif.com/esp-desktop-buddy/assets/esp32s3_box3_desktop_buddy_esp_box_3_demo.bin"]
+image.esp32-s3.addresses = ["0x0"]

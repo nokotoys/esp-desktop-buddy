@@ -1,0 +1,13 @@
+esp_toml_version = 1.0
+multipart = true
+chip = "esp32"
+supported_apps = ["Desktop Buddy Generic Headless"]
+
+[[portConnectionOptions]]
+console_baudrate = 115200
+
+["Desktop Buddy Generic Headless"]
+readme.text = "https://espressif.github.io/esp-desktop-buddy/desktop-buddy-generic-headless.md"
+console_baudrate = 115200
+image.esp32.parts = ["https://dl.espressif.com/esp-desktop-buddy/assets/esp32_desktop_buddy_generic_headless.bin"]
+image.esp32.addresses = ["0x0"]

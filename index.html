@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ESP Desktop Buddy</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bs-body-color: #212529;
+      --bs-body-bg: #ffffff;
+      --bs-muted: #6c757d;
+      --bs-border: #dee2e6;
+      --bs-surface: #f8f9fa;
+      --bs-primary: rgb(0, 113, 225);
+      --bs-primary-strong: rgb(0, 92, 184);
+      --bs-esp-color: #e0260b;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+        Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+      background: var(--bs-body-bg);
+      color: var(--bs-body-color);
+    }
+    .maincontainer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2.5rem 1rem 3rem;
+    }
+    main {
+      width: min(940px, 100%);
+    }
+    .hero {
+      margin-bottom: 1.5rem;
+    }
+    .hero h1 {
+      margin: 0 0 0.6rem;
+      font-size: clamp(2rem, 4vw, 2.75rem);
+      line-height: 1.15;
+    }
+    .hero p {
+      margin: 0;
+      color: var(--bs-muted);
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+    .panel {
+      border: 1px solid var(--bs-border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--bs-body-bg);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+    }
+    .panel-accent {
+      height: 4px;
+      background: var(--bs-esp-color);
+    }
+    .picker {
+      padding: 1.5rem;
+    }
+    .selectionTitle {
+      margin: 0 0 1rem;
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+    .picker-grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(170px, 1fr));
+      margin-bottom: 1rem;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+    .field label {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--bs-body-color);
+    }
+    .field select {
+      width: 100%;
+      min-height: 42px;
+      padding: 0.55rem 0.75rem;
+      border: 1px solid #ced4da;
+      border-radius: 4px;
+      background: #fff;
+      color: var(--bs-body-color);
+      font: inherit;
+    }
+    .selectionSummary {
+      margin: 0 0 1.25rem;
+      padding: 1rem;
+      border-radius: 8px;
+      background: var(--bs-surface);
+      border: 1px solid var(--bs-border);
+    }
+    .selectionSummaryTitle {
+      margin: 0 0 0.85rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--bs-body-color);
+    }
+    .selectionGrid {
+      display: grid;
+      gap: 0.85rem;
+      grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(0, 1fr));
+    }
+    .selectionItem {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      min-width: 0;
+    }
+    .selectionItemLabel {
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--bs-muted);
+    }
+    .selectionItemValue {
+      font-size: 1rem;
+      font-weight: 500;
+      color: var(--bs-body-color);
+      overflow-wrap: anywhere;
+    }
+    .actions {
+      display: flex;
+      justify-content: center;
+    }
+    .connectButton {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 0;
+      font-weight: 500;
+      line-height: 28px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+        Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+      padding: 6px 16px;
+      border-radius: 4px;
+      background-color: var(--bs-primary);
+      color: #fff;
+      text-decoration: none;
+      min-width: 300px;
+      box-shadow: 0 4px 12px rgba(0, 113, 225, 0.18);
+    }
+    .connectButton:hover {
+      background-color: var(--bs-primary-strong);
+    }
+    .connectButton[aria-disabled="true"] {
+      background: rgba(0, 0, 0, 0.2);
+      pointer-events: none;
+      box-shadow: none;
+    }
+    @media (max-width: 780px) {
+      .maincontainer {
+        padding-top: 1.5rem;
+      }
+      .picker {
+        padding: 1.1rem;
+      }
+      .picker-grid {
+        grid-template-columns: 1fr;
+      }
+      .selectionGrid {
+        grid-template-columns: 1fr;
+      }
+      .connectButton {
+        width: 100%;
+        min-width: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="maincontainer">
+    <main>
+      <section class="hero">
+        <h1>ESP Desktop Buddy</h1>
+        <p>Select the application, SoC, and dev board you want to flash.</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-accent"></div>
+        <div class="picker">
+          <p class="selectionTitle">Choose your target</p>
+          <div class="picker-grid">
+            <div class="field">
+              <label for="appSelect">Application</label>
+              <select id="appSelect"></select>
+            </div>
+            <div class="field">
+              <label for="socSelect">SoC</label>
+              <select id="socSelect"></select>
+            </div>
+            <div class="field">
+              <label for="boardSelect">Dev Board</label>
+              <select id="boardSelect"></select>
+            </div>
+          </div>
+
+          <div class="selectionSummary">
+            <p class="selectionSummaryTitle">Selected target</p>
+            <div class="selectionGrid">
+              <div class="selectionItem">
+                <span class="selectionItemLabel">Application</span>
+                <span id="selectionApplication" class="selectionItemValue">Choose an application</span>
+              </div>
+              <div class="selectionItem">
+                <span class="selectionItemLabel">SoC</span>
+                <span id="selectionSoc" class="selectionItemValue">Choose a SoC</span>
+              </div>
+              <div class="selectionItem">
+                <span class="selectionItemLabel">Dev Board</span>
+                <span id="selectionBoard" class="selectionItemValue">Choose a dev board</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <a id="launchButton" class="connectButton" href="#" aria-disabled="true">Open ESP Launchpad</a>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script id="manifest-data" type="application/json">{
+  "generated_at": "2026-04-24T11:55:31.380089+00:00",
+  "base_url": "https://espressif.github.io/esp-desktop-buddy/",
+  "asset_base_url": "https://dl.espressif.com/esp-desktop-buddy/assets/",
+  "launchpad_url": "https://espressif.github.io/esp-launchpad/minimal-launchpad/",
+  "source": {
+    "branch": "feat/esp-desktop-buddy",
+    "commit": "adc03b4cd2b4da06d6b4aef12b2f754287b26215"
+  },
+  "apps": [
+    {
+      "app_id": "generic-headless",
+      "app_name": "Desktop Buddy Generic Headless",
+      "config_slug": "desktop-buddy-generic-headless",
+      "description": "Minimal BLE Desktop Buddy firmware for generic ESP32 development boards.",
+      "console_baudrate": 115200,
+      "readme": "desktop-buddy-generic-headless.md",
+      "targets": [
+        {
+          "chip_key": "esp32",
+          "soc_label": "ESP32",
+          "soc_slug": "esp32",
+          "board_name": "Generic Dev Board",
+          "board_slug": "generic-dev-board",
+          "config_path": "configs/desktop-buddy-generic-headless/esp32-generic-dev-board.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32_desktop_buddy_generic_headless.bin"
+        },
+        {
+          "chip_key": "esp32-c2",
+          "soc_label": "ESP32-C2",
+          "soc_slug": "esp32-c2",
+          "board_name": "Generic Dev Board",
+          "board_slug": "generic-dev-board",
+          "config_path": "configs/desktop-buddy-generic-headless/esp32-c2-generic-dev-board.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32c2_desktop_buddy_generic_headless.bin"
+        },
+        {
+          "chip_key": "esp32-c3",
+          "soc_label": "ESP32-C3",
+          "soc_slug": "esp32-c3",
+          "board_name": "Generic Dev Board",
+          "board_slug": "generic-dev-board",
+          "config_path": "configs/desktop-buddy-generic-headless/esp32-c3-generic-dev-board.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32c3_desktop_buddy_generic_headless.bin"
+        },
+        {
+          "chip_key": "esp32-c5",
+          "soc_label": "ESP32-C5",
+          "soc_slug": "esp32-c5",
+          "board_name": "Generic Dev Board",
+          "board_slug": "generic-dev-board",
+          "config_path": "configs/desktop-buddy-generic-headless/esp32-c5-generic-dev-board.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32c5_desktop_buddy_generic_headless.bin"
+        },
+        {
+          "chip_key": "esp32-c6",
+          "soc_label": "ESP32-C6",
+          "soc_slug": "esp32-c6",
+          "board_name": "Generic Dev Board",
+          "board_slug": "generic-dev-board",
+          "config_path": "configs/desktop-buddy-generic-headless/esp32-c6-generic-dev-board.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32c6_desktop_buddy_generic_headless.bin"
+        },
+        {
+          "chip_key": "esp32-c61",
+          "soc_label": "ESP32-C61",
+          "soc_slug": "esp32-c61",
+          "board_name": "Generic Dev Board",
+          "board_slug": "generic-dev-board",
+          "config_path": "configs/desktop-buddy-generic-headless/esp32-c61-generic-dev-board.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32c61_desktop_buddy_generic_headless.bin"
+        },
+        {
+          "chip_key": "esp32-h2",
+          "soc_label": "ESP32-H2",
+          "soc_slug": "esp32-h2",
+          "board_name": "Generic Dev Board",
+          "board_slug": "generic-dev-board",
+          "config_path": "configs/desktop-buddy-generic-headless/esp32-h2-generic-dev-board.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32h2_desktop_buddy_generic_headless.bin"
+        },
+        {
+          "chip_key": "esp32-s3",
+          "soc_label": "ESP32-S3",
+          "soc_slug": "esp32-s3",
+          "board_name": "Generic Dev Board",
+          "board_slug": "generic-dev-board",
+          "config_path": "configs/desktop-buddy-generic-headless/esp32-s3-generic-dev-board.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32s3_desktop_buddy_generic_headless.bin"
+        }
+      ]
+    },
+    {
+      "app_id": "m5-dualkey-headless",
+      "app_name": "Desktop Buddy M5Stack Chain DualKey",
+      "config_slug": "desktop-buddy-m5-dualkey-headless",
+      "description": "Desktop Buddy prompt hardware UI for the M5Stack Chain DualKey.",
+      "console_baudrate": 115200,
+      "readme": "desktop-buddy-m5-dualkey-headless.md",
+      "targets": [
+        {
+          "chip_key": "esp32-s3",
+          "soc_label": "ESP32-S3",
+          "soc_slug": "esp32-s3",
+          "board_name": "M5Stack Chain DualKey",
+          "board_slug": "m5stack-chain-dualkey",
+          "config_path": "configs/desktop-buddy-m5-dualkey-headless/esp32-s3-m5stack-chain-dualkey.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32s3_m5stack_chain_dualkey_desktop_buddy.bin"
+        }
+      ]
+    },
+    {
+      "app_id": "esp-box-3-demo",
+      "app_name": "Desktop Buddy ESP-BOX-3 Demo",
+      "config_slug": "desktop-buddy-esp-box-3-demo",
+      "description": "Desktop Buddy display demo for the ESP32-S3-BOX-3.",
+      "console_baudrate": 115200,
+      "readme": "desktop-buddy-esp-box-3-demo.md",
+      "targets": [
+        {
+          "chip_key": "esp32-s3",
+          "soc_label": "ESP32-S3",
+          "soc_slug": "esp32-s3",
+          "board_name": "ESP32-S3-BOX-3",
+          "board_slug": "esp32-s3-box-3",
+          "config_path": "configs/desktop-buddy-esp-box-3-demo/esp32-s3-box-3.toml",
+          "asset_url": "https://dl.espressif.com/esp-desktop-buddy/assets/esp32s3_box3_desktop_buddy_esp_box_3_demo.bin"
+        }
+      ]
+    }
+  ],
+  "default_selection": {
+    "app_id": "generic-headless",
+    "soc_slug": "esp32",
+    "board_slug": "generic-dev-board",
+    "config_path": "configs/desktop-buddy-generic-headless/esp32-generic-dev-board.toml"
+  }
+}</script>
+  <script>
+    const manifest = JSON.parse(document.getElementById("manifest-data").textContent);
+    const params = new URLSearchParams(window.location.search);
+    const launchpadBase = params.get("launchpadURL") || manifest.launchpad_url;
+    const pageBase = new URL("./", window.location.href);
+
+    const appSelect = document.getElementById("appSelect");
+    const socSelect = document.getElementById("socSelect");
+    const boardSelect = document.getElementById("boardSelect");
+    const launchButton = document.getElementById("launchButton");
+    const selectionApplication = document.getElementById("selectionApplication");
+    const selectionSoc = document.getElementById("selectionSoc");
+    const selectionBoard = document.getElementById("selectionBoard");
+
+    function uniqueEntries(entries, keyName) {
+      const seen = new Set();
+      return entries.filter((entry) => {
+        if (seen.has(entry[keyName])) {
+          return false;
+        }
+        seen.add(entry[keyName]);
+        return true;
+      });
+    }
+
+    function setLinkState(element, href, labelHtml) {
+      if (href) {
+        element.href = href;
+        element.removeAttribute("aria-disabled");
+      } else {
+        element.href = "#";
+        element.setAttribute("aria-disabled", "true");
+      }
+      if (labelHtml) {
+        element.innerHTML = labelHtml;
+      }
+    }
+
+    function selectedApp() {
+      return manifest.apps.find((app) => app.app_id === appSelect.value);
+    }
+
+    function selectionsForCurrentApp() {
+      const app = selectedApp();
+      return app ? app.targets : [];
+    }
+
+    function populateApps() {
+      appSelect.innerHTML = "";
+      for (const app of manifest.apps) {
+        const option = document.createElement("option");
+        option.value = app.app_id;
+        option.textContent = app.app_name;
+        appSelect.appendChild(option);
+      }
+      if (manifest.default_selection?.app_id) {
+        appSelect.value = manifest.default_selection.app_id;
+      }
+    }
+
+    function populateSocs() {
+      const selections = selectionsForCurrentApp();
+      const socs = uniqueEntries(selections.map((selection) => ({
+        soc_slug: selection.soc_slug,
+        soc_label: selection.soc_label,
+      })), "soc_slug");
+      socSelect.innerHTML = "";
+      for (const soc of socs) {
+        const option = document.createElement("option");
+        option.value = soc.soc_slug;
+        option.textContent = soc.soc_label;
+        socSelect.appendChild(option);
+      }
+      if (selectedApp()?.app_id === manifest.default_selection?.app_id) {
+        socSelect.value = manifest.default_selection.soc_slug;
+      }
+    }
+
+    function populateBoards() {
+      const selections = selectionsForCurrentApp().filter((selection) => selection.soc_slug === socSelect.value);
+      const boards = uniqueEntries(selections.map((selection) => ({
+        board_slug: selection.board_slug,
+        board_name: selection.board_name,
+      })), "board_slug");
+      boardSelect.innerHTML = "";
+      for (const board of boards) {
+        const option = document.createElement("option");
+        option.value = board.board_slug;
+        option.textContent = board.board_name;
+        boardSelect.appendChild(option);
+      }
+      if (
+        selectedApp()?.app_id === manifest.default_selection?.app_id &&
+        socSelect.value === manifest.default_selection?.soc_slug
+      ) {
+        boardSelect.value = manifest.default_selection.board_slug;
+      }
+    }
+
+    function currentSelection() {
+      return selectionsForCurrentApp().find((selection) =>
+        selection.soc_slug === socSelect.value && selection.board_slug === boardSelect.value
+      );
+    }
+
+    function updateSelection() {
+      const app = selectedApp();
+      const selection = currentSelection();
+      if (!app || !selection) {
+        selectionApplication.textContent = "Choose an application";
+        selectionSoc.textContent = "Choose a SoC";
+        selectionBoard.textContent = "Choose a dev board";
+        setLinkState(launchButton, "", "Open ESP Launchpad");
+        return;
+      }
+
+      const configUrl = new URL(selection.config_path, pageBase).toString();
+      const launchUrl = `${launchpadBase}?flashConfigURL=${encodeURIComponent(configUrl)}`;
+
+      selectionApplication.textContent = app.app_name;
+      selectionSoc.textContent = selection.soc_label;
+      selectionBoard.textContent = selection.board_name;
+      setLinkState(launchButton, launchUrl, "Open ESP Launchpad");
+    }
+
+    appSelect.addEventListener("change", () => {
+      populateSocs();
+      populateBoards();
+      updateSelection();
+    });
+    socSelect.addEventListener("change", () => {
+      populateBoards();
+      updateSelection();
+    });
+    boardSelect.addEventListener("change", updateSelection);
+
+    populateApps();
+    populateSocs();
+    populateBoards();
+    updateSelection();
+  </script>
+</body>
+</html>
