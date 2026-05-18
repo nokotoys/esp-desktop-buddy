@@ -584,7 +584,7 @@ static void box_demo_ui_refresh(box_demo_app_t *app)
     // negotiating, plain text during pairing so it doesn't compete with
     // the big passkey in the middle.
     if (passkey_active) {
-        strlcpy(transport_text, "Pairing — enter code on desktop", sizeof(transport_text));
+        strlcpy(transport_text, "Pairing: enter code on desktop", sizeof(transport_text));
         transport_color = lv_color_hex(BOX_DEMO_COLOR_TEXT);
     } else if (!transport.connected) {
         if (advertising_name[0] != '\0') {
@@ -601,7 +601,7 @@ static void box_demo_ui_refresh(box_demo_app_t *app)
         strlcpy(transport_text, "Connected and ready", sizeof(transport_text));
         transport_color = lv_color_hex(BOX_DEMO_COLOR_ALLOW);
     } else {
-        strlcpy(transport_text, "Securing channel…", sizeof(transport_text));
+        strlcpy(transport_text, "Securing channel...", sizeof(transport_text));
         transport_color = lv_color_hex(BOX_DEMO_COLOR_MUTED);
     }
 
@@ -610,7 +610,7 @@ static void box_demo_ui_refresh(box_demo_app_t *app)
             strlcpy(sessions_text, "idle", sizeof(sessions_text));
         } else {
             snprintf(sessions_text, sizeof(sessions_text),
-                     "%lu running · %lu waiting",
+                     "%lu running / %lu waiting",
                      (unsigned long)state_cache.running,
                      (unsigned long)state_cache.waiting);
         }
