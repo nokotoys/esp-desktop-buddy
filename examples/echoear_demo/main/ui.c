@@ -13,9 +13,11 @@
 
 #include "esp_check.h"
 #include "esp_log.h"
+#include "led_indicator.h"
 #include "widgets/gif/lv_gif.h"
 
 #include "app_shared.h"
+#include "audio.h"
 #include "example_app_helpers.h"
 
 #define BOX_DEMO_UI_STACK 8192
@@ -59,20 +61,26 @@
 // vertical centerline so they stay inside the visible circle. The GIF
 // card holds the character (or a placeholder); the passkey label takes
 // over the same zone during BLE pairing.
-static lv_obj_t *s_title_label;       // y=58, centered, big
-static lv_obj_t *s_transport_label;   // y=92, centered, small muted
-static lv_obj_t *s_sessions_label;    // y=110, centered, small muted
-static lv_obj_t *s_gif_card;          // y=130, 200x160, centered character zone
+static lv_obj_t *s_title_label;       // y=40, centered, big
+static lv_obj_t *s_transport_label;   // y=74, centered, small muted
+static lv_obj_t *s_sessions_label;    // y=92, centered, small muted
+static lv_obj_t *s_gif_card;          // y=114, 200x120, centered character zone
 static lv_obj_t *s_gif_obj;
 static lv_obj_t *s_gif_label;
 static lv_obj_t *s_passkey_label;     // takes over gif zone during pairing
-static lv_obj_t *s_pack_label;        // y=298, centered, small muted
+#define BOX_DEMO_TRANSCRIPT_LINES 3
+static lv_obj_t *s_transcript_labels[BOX_DEMO_TRANSCRIPT_LINES];  // y=238/254/270
 static lv_obj_t *s_approval_overlay;
 static lv_obj_t *s_approval_tool_label;
 static lv_obj_t *s_approval_hint_label;
 static box_demo_app_t *s_ui_app;
 static char s_gif_pack_id[EXAMPLE_CHARPACK_PACK_ID_MAX + 1];
 static char s_gif_src[BOX_DEMO_GIF_PATH_MAX];
+
+// On-board LED. Pulses fast when a permission prompt is waiting so the user
+// notices even when looking away from the screen.
+static led_indicator_handle_t s_led_handle;
+static bool s_led_is_attention;
 
 static void box_demo_style_label(lv_obj_t *label, const lv_font_t *font, lv_color_t color)
 {
@@ -218,6 +226,80 @@ static bool box_demo_pick_gif_asset(const char *pack_id,
     return false;
 }
 
+// Buddy state derived from Claude session state. The active pack supplies
+// a GIF per state; if the named file isn't in the pack we fall back to
+// whatever generic asset the pack provides.
+typedef enum {
+    BUDDY_STATE_SLEEP,       // not connected over BLE
+    BUDDY_STATE_IDLE,        // connected, no urgent activity
+    BUDDY_STATE_BUSY,        // many sessions running
+    BUDDY_STATE_ATTENTION,   // permission prompt waiting
+} buddy_state_t;
+
+static const char *buddy_state_filename(buddy_state_t s)
+{
+    switch (s) {
+    case BUDDY_STATE_SLEEP:     return "sleep.gif";
+    case BUDDY_STATE_BUSY:      return "busy.gif";
+    case BUDDY_STATE_ATTENTION: return "attention.gif";
+    case BUDDY_STATE_IDLE:
+    default:                    return "idle_0.gif";
+    }
+}
+
+// Decide what the buddy should be doing right now. Order matters: attention
+// trumps everything (a pending prompt is the most urgent signal), then
+// busy/idle when connected, sleep when offline.
+static buddy_state_t derive_buddy_state(const example_buddy_state_cache_t *sc,
+                                          const esp_desktop_buddy_transport_ble_state_t *tx)
+{
+    if (sc->has_state && sc->prompt.present) return BUDDY_STATE_ATTENTION;
+    if (!tx->connected)                      return BUDDY_STATE_SLEEP;
+    if (sc->has_state && sc->running >= 3)   return BUDDY_STATE_BUSY;
+    return BUDDY_STATE_IDLE;
+}
+
+// Build a LVGL GIF source path "S:packs/<pack>/<filename>" for a specific
+// file. Returns false if the file isn't actually on disk (lets callers try
+// a fallback).
+static bool box_demo_build_named_gif_src(const char *pack_id,
+                                          const char *filename,
+                                          char *out_src,
+                                          size_t out_src_size)
+{
+    char candidate_path[BOX_DEMO_GIF_PATH_MAX];
+    const char *packs_root = CONFIG_EXAMPLE_CHARPACK_PACKS_ROOT;
+    const char *mount_point = CONFIG_EXAMPLE_CHARPACK_MOUNT_POINT;
+    const char *relative_root = packs_root;
+    size_t mount_len;
+
+    if (pack_id == NULL || pack_id[0] == '\0' ||
+        filename == NULL || filename[0] == '\0' ||
+        out_src == NULL || out_src_size == 0) {
+        return false;
+    }
+
+    if (snprintf(candidate_path, sizeof(candidate_path), "%s/%s/%s",
+                 packs_root, pack_id, filename) >= (int)sizeof(candidate_path)) {
+        return false;
+    }
+    if (!box_demo_path_exists(candidate_path)) {
+        return false;
+    }
+
+    mount_len = strlen(mount_point);
+    if (strncmp(relative_root, mount_point, mount_len) == 0) {
+        relative_root += mount_len;
+        while (*relative_root == '/') {
+            relative_root++;
+        }
+    }
+
+    return snprintf(out_src, out_src_size, "%c:%s/%s/%s",
+                    (char)LV_FS_STDIO_LETTER,
+                    relative_root, pack_id, filename) < (int)out_src_size;
+}
+
 static bool box_demo_build_gif_src(const char *pack_id,
                                    char *out_src,
                                    size_t out_src_size)
@@ -264,17 +346,28 @@ static void box_demo_ui_set_gif_placeholder(const char *text)
 }
 
 static void box_demo_ui_update_gif(bool have_active,
-                                   const example_charpack_info_t *active_pack)
+                                   const example_charpack_info_t *active_pack,
+                                   buddy_state_t desired_state)
 {
 #if CONFIG_LV_USE_GIF
     char desired_src[BOX_DEMO_GIF_PATH_MAX];
+    bool got = false;
 
     if (!have_active || active_pack == NULL || active_pack->pack_id[0] == '\0') {
         box_demo_ui_set_gif_placeholder("No active pack");
         return;
     }
 
-    if (!box_demo_build_gif_src(active_pack->pack_id, desired_src, sizeof(desired_src))) {
+    // Prefer the GIF that matches the current buddy state. If that file
+    // isn't in the pack, fall back to whatever the generic picker finds
+    // so we still show something.
+    got = box_demo_build_named_gif_src(active_pack->pack_id,
+                                         buddy_state_filename(desired_state),
+                                         desired_src, sizeof(desired_src));
+    if (!got) {
+        got = box_demo_build_gif_src(active_pack->pack_id, desired_src, sizeof(desired_src));
+    }
+    if (!got) {
         box_demo_ui_set_gif_placeholder("Pack GIF missing");
         return;
     }
@@ -298,6 +391,7 @@ static void box_demo_ui_update_gif(bool have_active,
 #else
     (void)have_active;
     (void)active_pack;
+    (void)desired_state;
     box_demo_ui_set_gif_placeholder("GIF support off");
 #endif
 }
@@ -323,6 +417,7 @@ static void box_demo_send_decision(box_demo_app_t *app,
 
 static void box_demo_approval_approve_cb(lv_event_t *e)
 {
+    audio_play(AUDIO_CUE_ACK);
     box_demo_send_decision((box_demo_app_t *)lv_event_get_user_data(e),
                            ESP_DESKTOP_BUDDY_PERMISSION_DECISION_ONCE,
                            "approve");
@@ -330,6 +425,7 @@ static void box_demo_approval_approve_cb(lv_event_t *e)
 
 static void box_demo_approval_deny_cb(lv_event_t *e)
 {
+    audio_play(AUDIO_CUE_DENY);
     box_demo_send_decision((box_demo_app_t *)lv_event_get_user_data(e),
                            ESP_DESKTOP_BUDDY_PERMISSION_DECISION_DENY,
                            "deny");
@@ -363,7 +459,6 @@ static void box_demo_ui_refresh(box_demo_app_t *app)
     char title_text[BOX_DEMO_NAME_MAX + BOX_DEMO_OWNER_MAX + 20];
     char transport_text[80];
     char sessions_text[64];
-    char pack_text[64];
     char passkey_text[8];
     lv_color_t transport_color;
 
@@ -431,27 +526,60 @@ static void box_demo_ui_refresh(box_demo_app_t *app)
         sessions_text[0] = '\0';
     }
 
-    snprintf(pack_text, sizeof(pack_text),
-             have_active ? "pack: %s" : "pack: none",
-             have_active ? active_pack.pack_id : "");
+    // LED alert + audio chime: both fire on the false→true edge of "a
+    // permission prompt is waiting." LED keeps pulsing until the prompt
+    // resolves; chime is a one-shot.
+    bool want_attention = prompt_active && !passkey_active;
+    if (want_attention != s_led_is_attention) {
+        if (want_attention) {
+            if (s_led_handle) led_indicator_start(s_led_handle, BSP_LED_BLINK_FAST);
+            audio_play(AUDIO_CUE_CHIME);
+        } else if (s_led_handle) {
+            led_indicator_stop(s_led_handle, BSP_LED_BLINK_FAST);
+        }
+        s_led_is_attention = want_attention;
+    }
 
-    // Passkey takeover: hide the GIF zone, show the big 6-digit code.
+    // Passkey takeover: hide the GIF zone (and transcript) and show the big
+    // 6-digit code centered. Transcript belongs to the connected experience.
     if (passkey_active) {
         snprintf(passkey_text, sizeof(passkey_text), "%06lu", (unsigned long)transport.passkey);
         lv_label_set_text(s_passkey_label, passkey_text);
         lv_obj_clear_flag(s_passkey_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_gif_card, LV_OBJ_FLAG_HIDDEN);
+        for (int i = 0; i < BOX_DEMO_TRANSCRIPT_LINES; i++) {
+            lv_obj_add_flag(s_transcript_labels[i], LV_OBJ_FLAG_HIDDEN);
+        }
     } else {
         lv_obj_add_flag(s_passkey_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(s_gif_card, LV_OBJ_FLAG_HIDDEN);
-        box_demo_ui_update_gif(have_active, &active_pack);
+        buddy_state_t bs = derive_buddy_state(&state_cache, &transport);
+        box_demo_ui_update_gif(have_active, &active_pack, bs);
+
+        // Transcript: SDK delivers entries newest-first. Display chat-style
+        // with newest at the bottom line (brighter). Empty slots clear out
+        // when older messages roll off the top.
+        for (int i = 0; i < BOX_DEMO_TRANSCRIPT_LINES; i++) {
+            lv_obj_clear_flag(s_transcript_labels[i], LV_OBJ_FLAG_HIDDEN);
+            // bottom row = newest = entries[0]; row above = entries[1]; ...
+            int entry_idx = (BOX_DEMO_TRANSCRIPT_LINES - 1) - i;
+            bool is_newest = (i == BOX_DEMO_TRANSCRIPT_LINES - 1);
+            if ((size_t)entry_idx < state_cache.entry_count &&
+                state_cache.entries[entry_idx][0] != '\0') {
+                lv_label_set_text(s_transcript_labels[i], state_cache.entries[entry_idx]);
+                lv_obj_set_style_text_color(s_transcript_labels[i],
+                                            lv_color_hex(is_newest ? BOX_DEMO_COLOR_TEXT
+                                                                    : BOX_DEMO_COLOR_MUTED), 0);
+            } else {
+                lv_label_set_text(s_transcript_labels[i], "");
+            }
+        }
     }
 
     lv_label_set_text(s_title_label, title_text);
     lv_label_set_text(s_transport_label, transport_text);
     lv_obj_set_style_text_color(s_transport_label, transport_color, 0);
     lv_label_set_text(s_sessions_label, sessions_text);
-    lv_label_set_text(s_pack_label, pack_text);
 
     // Approval overlay take-over. Only when a real permission prompt is
     // active (not during BLE pairing — that uses the passkey card below).
@@ -495,6 +623,17 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     // two pads cross-talk on this board, and approve/deny is high-stakes.
     // Decisions go through the touchscreen overlay instead.
 
+    // LED indicator on GPIO_43. Used for attention alerts.
+    led_indicator_handle_t leds[BSP_LED_NUM] = {0};
+    int led_cnt = 0;
+    if (bsp_led_indicator_create(leds, &led_cnt, BSP_LED_NUM) == ESP_OK && led_cnt > 0) {
+        s_led_handle = leds[0];
+    } else {
+        ESP_LOGW("box_demo_ui", "LED indicator init failed");
+        s_led_handle = NULL;
+    }
+    s_led_is_attention = false;
+
     if (!bsp_display_lock(BOX_DEMO_UI_LOCK_TIMEOUT_MS)) {
         return ESP_FAIL;
     }
@@ -507,13 +646,15 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
 
     // Round-display idle layout: vertical stack down the centerline, sized
     // so each row stays inside the visible circle (radius 180, center 180,180).
+    // Shifted up ~18px from the original to use the wasted top-arc pixels;
+    // pack-name label removed so transcript breathes.
     // Top: title | transport | sessions text bands
-    // Middle: 200x160 character zone (GIF or placeholder); passkey takes
+    // Middle: 200x120 character zone (GIF or placeholder); passkey takes
     // over the same zone during pairing.
-    // Bottom: pack label.
+    // Bottom: 3-line transcript.
 
     s_title_label = lv_label_create(scr);
-    lv_obj_set_pos(s_title_label, 20, 58);
+    lv_obj_set_pos(s_title_label, 20, 40);
     lv_obj_set_size(s_title_label, 320, 30);
     box_demo_style_label(s_title_label, BOX_DEMO_FONT_PASSKEY, lv_color_hex(BOX_DEMO_COLOR_TEXT));
     lv_obj_set_style_text_align(s_title_label, LV_TEXT_ALIGN_CENTER, 0);
@@ -521,7 +662,7 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     lv_label_set_text(s_title_label, "EchoEar");
 
     s_transport_label = lv_label_create(scr);
-    lv_obj_set_pos(s_transport_label, 20, 92);
+    lv_obj_set_pos(s_transport_label, 20, 74);
     lv_obj_set_size(s_transport_label, 320, 16);
     box_demo_style_label(s_transport_label, BOX_DEMO_FONT_META, lv_color_hex(BOX_DEMO_COLOR_MUTED));
     lv_obj_set_style_text_align(s_transport_label, LV_TEXT_ALIGN_CENTER, 0);
@@ -529,7 +670,7 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     lv_label_set_text(s_transport_label, "Waiting for Claude over BLE");
 
     s_sessions_label = lv_label_create(scr);
-    lv_obj_set_pos(s_sessions_label, 20, 110);
+    lv_obj_set_pos(s_sessions_label, 20, 92);
     lv_obj_set_size(s_sessions_label, 320, 16);
     box_demo_style_label(s_sessions_label, BOX_DEMO_FONT_META, lv_color_hex(BOX_DEMO_COLOR_MUTED));
     lv_obj_set_style_text_align(s_sessions_label, LV_TEXT_ALIGN_CENTER, 0);
@@ -537,8 +678,8 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     lv_label_set_text(s_sessions_label, "");
 
     s_gif_card = lv_obj_create(scr);
-    lv_obj_set_pos(s_gif_card, 80, 132);
-    lv_obj_set_size(s_gif_card, 200, 156);
+    lv_obj_set_pos(s_gif_card, 80, 114);
+    lv_obj_set_size(s_gif_card, 200, 120);
     box_demo_style_card(s_gif_card, BOX_DEMO_COLOR_PANEL_ALT, BOX_DEMO_COLOR_PANEL_ALT);
     lv_obj_clear_flag(s_gif_card, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -558,20 +699,27 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     // Passkey label: hidden by default. During pairing it replaces the GIF
     // card and shows the 6-digit code at title-size font.
     s_passkey_label = lv_label_create(scr);
-    lv_obj_set_pos(s_passkey_label, 60, 180);
+    lv_obj_set_pos(s_passkey_label, 60, 160);
     lv_obj_set_size(s_passkey_label, 240, 40);
     box_demo_style_label(s_passkey_label, BOX_DEMO_FONT_PASSKEY, lv_color_hex(BOX_DEMO_COLOR_TEXT));
     lv_obj_set_style_text_align(s_passkey_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(s_passkey_label, "");
     lv_obj_add_flag(s_passkey_label, LV_OBJ_FLAG_HIDDEN);
 
-    s_pack_label = lv_label_create(scr);
-    lv_obj_set_pos(s_pack_label, 30, 298);
-    lv_obj_set_size(s_pack_label, 300, 14);
-    box_demo_style_label(s_pack_label, BOX_DEMO_FONT_META, lv_color_hex(BOX_DEMO_COLOR_MUTED));
-    lv_obj_set_style_text_align(s_pack_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(s_pack_label, LV_LABEL_LONG_DOT);
-    lv_label_set_text(s_pack_label, "pack: none");
+    // Transcript: last few Claude messages, newest at the bottom (chat-like).
+    // Oldest dimmed, newest in body color. Stays inside the circle's chord at
+    // these y positions (~290 wide at y=270). Truncate with ... on overflow.
+    static const int transcript_y[BOX_DEMO_TRANSCRIPT_LINES] = { 238, 254, 270 };
+    for (int i = 0; i < BOX_DEMO_TRANSCRIPT_LINES; i++) {
+        s_transcript_labels[i] = lv_label_create(scr);
+        lv_obj_set_pos(s_transcript_labels[i], 35, transcript_y[i]);
+        lv_obj_set_size(s_transcript_labels[i], 290, 14);
+        box_demo_style_label(s_transcript_labels[i], BOX_DEMO_FONT_META,
+                             lv_color_hex(BOX_DEMO_COLOR_MUTED));
+        lv_obj_set_style_text_align(s_transcript_labels[i], LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(s_transcript_labels[i], LV_LABEL_LONG_DOT);
+        lv_label_set_text(s_transcript_labels[i], "");
+    }
 
     // Approval overlay: a full-screen take-over that appears whenever a
     // permission prompt is active. Top half = APPROVE (green), bottom half

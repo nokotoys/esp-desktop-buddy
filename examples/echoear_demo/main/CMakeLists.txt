@@ -3,6 +3,7 @@ idf_component_register(
         "app_main.c"
         "app_commands.c"
         "ui.c"
+        "audio.c"
         "charpack_console.c"
     INCLUDE_DIRS "."
     REQUIRES
@@ -15,4 +16,6 @@ idf_component_register(
         example_charpack
         espressif__cjson
         esp_vocat
+        espressif__led_indicator
+        espressif__esp_codec_dev
 )

@@ -15,3 +15,4 @@ dependencies.lock
 
 tools/.venv-*/
 tools/tests/.artifacts/
+/examples/echoear_demo/.cache

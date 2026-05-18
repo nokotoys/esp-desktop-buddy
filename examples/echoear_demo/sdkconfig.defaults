@@ -41,3 +41,8 @@ CONFIG_LV_USE_GIF=y
 # VoCat 360x360 round LCD: shrink BSP draw buffer so double-buffer fits in
 # internal RAM (default 100 lines = 72KB each; 40 lines = 29KB each).
 CONFIG_BSP_LCD_DRAW_BUF_HEIGHT=40
+# Enable long filenames on the FAT charpack partition. Default 8.3 mode
+# rejects filenames like attention.gif / celebrate.gif (9-char base), so
+# character pack installs fail at the first long-named GIF.
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255

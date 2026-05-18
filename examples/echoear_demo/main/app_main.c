@@ -9,6 +9,7 @@
 #include "example_app_helpers.h"
 
 #include "app_shared.h"
+#include "audio.h"
 
 static const char *TAG = "esp_box_3_demo";
 static box_demo_app_t s_app;
@@ -84,6 +85,7 @@ void app_main(void)
                                                                          sizeof(s_app.advertising_name)));
 
     example_console_init();
+    audio_init();  // codec init logs its own errors; non-fatal if it fails
     ESP_ERROR_CHECK(box_demo_ui_init(&s_app));
     box_demo_ui_start(&s_app);
     box_demo_charpack_console_start(&s_app);
