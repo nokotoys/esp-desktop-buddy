@@ -32,15 +32,19 @@
 #define BOX_DEMO_UI_GIF_WIDTH 98
 #define BOX_DEMO_UI_GIF_HEIGHT 126
 #define BOX_DEMO_UI_GIF_TEXT_WIDTH 78
-#define BOX_DEMO_COLOR_BG 0xF3F4F6
-#define BOX_DEMO_COLOR_PANEL 0xFFFFFF
-#define BOX_DEMO_COLOR_PANEL_ALT 0xE5E7EB
-#define BOX_DEMO_COLOR_TEXT 0x111111
-#define BOX_DEMO_COLOR_MUTED 0x4B5563
-#define BOX_DEMO_COLOR_ALLOW 0x166534
-#define BOX_DEMO_COLOR_DENY 0x991B1B
-#define BOX_DEMO_COLOR_APPROVE_BG 0x16A34A
-#define BOX_DEMO_COLOR_DENY_BG    0xDC2626
+// Dark theme with Claude/M5 orange accent. Matches the original
+// claude-desktop-buddy firmware's aesthetic (black background, orange
+// for branding/attention).
+#define BOX_DEMO_COLOR_BG         0x000000  // pure black background
+#define BOX_DEMO_COLOR_PANEL      0x111111  // slight contrast for panels
+#define BOX_DEMO_COLOR_PANEL_ALT  0x000000  // matches bg = invisible card
+#define BOX_DEMO_COLOR_TEXT       0xFFFFFF  // body text on dark
+#define BOX_DEMO_COLOR_MUTED      0x9CA3AF  // medium gray, readable on dark
+#define BOX_DEMO_COLOR_ALLOW      0x22C55E  // bright green for "ready"
+#define BOX_DEMO_COLOR_DENY       0xEF4444  // bright red
+#define BOX_DEMO_COLOR_ACCENT     0xFF6B35  // Claude/M5 orange — branding + alert
+#define BOX_DEMO_COLOR_APPROVE_BG 0x16A34A  // approval overlay top half
+#define BOX_DEMO_COLOR_DENY_BG    0xDC2626  // approval overlay bottom half
 #define BOX_DEMO_COLOR_ON_DARK    0xFFFFFF
 #define BOX_DEMO_GIF_PATH_MAX 224
 
@@ -70,9 +74,18 @@ static lv_obj_t *s_gif_label;
 static lv_obj_t *s_passkey_label;     // takes over gif zone during pairing
 #define BOX_DEMO_TRANSCRIPT_LINES 3
 static lv_obj_t *s_transcript_labels[BOX_DEMO_TRANSCRIPT_LINES];  // y=238/254/270
+static lv_obj_t *s_tokens_label;      // y=290, today's output token count
 static lv_obj_t *s_approval_overlay;
 static lv_obj_t *s_approval_tool_label;
 static lv_obj_t *s_approval_hint_label;
+// Stats overlay: swipe up from idle to show, swipe down to hide.
+static lv_obj_t *s_stats_overlay;
+static lv_obj_t *s_stats_level_badge;
+static lv_obj_t *s_stats_approved_label;
+static lv_obj_t *s_stats_denied_label;
+static lv_obj_t *s_stats_tokens_label;
+static lv_obj_t *s_stats_today_label;
+static lv_obj_t *s_stats_mood_label;
 static box_demo_app_t *s_ui_app;
 static char s_gif_pack_id[EXAMPLE_CHARPACK_PACK_ID_MAX + 1];
 static char s_gif_src[BOX_DEMO_GIF_PATH_MAX];
@@ -415,6 +428,77 @@ static void box_demo_send_decision(box_demo_app_t *app,
     }
 }
 
+// Mood 0..4 derived from median velocity (seconds to respond) + denial ratio.
+// Mirrors the M5 firmware's stats.h logic so the device feels consistent.
+static uint8_t derive_mood(uint32_t velocity_s, uint32_t approvals, uint32_t denials)
+{
+    int8_t tier;
+    if (velocity_s == 0)         tier = 2;   // no data, neutral
+    else if (velocity_s < 15)    tier = 4;
+    else if (velocity_s < 30)    tier = 3;
+    else if (velocity_s < 60)    tier = 2;
+    else if (velocity_s < 120)   tier = 1;
+    else                          tier = 0;
+
+    uint32_t total = approvals + denials;
+    if (total >= 3) {
+        if (denials > approvals)        tier -= 2;
+        else if (denials * 2 > approvals) tier -= 1;
+    }
+    if (tier < 0) tier = 0;
+    return (uint8_t)tier;
+}
+
+static const char *mood_word(uint8_t tier)
+{
+    switch (tier) {
+    case 4: return "joyful";
+    case 3: return "happy";
+    case 2: return "ok";
+    case 1: return "grumpy";
+    default: return "sad";
+    }
+}
+
+static uint32_t mood_color(uint8_t tier)
+{
+    if (tier >= 3) return BOX_DEMO_COLOR_ACCENT;   // happy = orange
+    if (tier >= 2) return BOX_DEMO_COLOR_MUTED;    // neutral = gray
+    return BOX_DEMO_COLOR_DENY;                     // sad = red
+}
+
+// Format a token count as either raw (<1k), "12.3 K", or "1.2 M". Same logic
+// as the idle footer but in a shared helper.
+static void format_tokens(char *out, size_t out_size, uint64_t t)
+{
+    if (t < 1000) {
+        snprintf(out, out_size, "%llu", t);
+    } else if (t < 1000000) {
+        snprintf(out, out_size, "%llu.%llu K", t / 1000, (t % 1000) / 100);
+    } else {
+        snprintf(out, out_size, "%llu.%llu M", t / 1000000, (t % 1000000) / 100000);
+    }
+}
+
+// Swipe handler: up shows stats, down hides them. Ignored when the approval
+// overlay is up — don't fight a high-stakes prompt.
+static void box_demo_screen_gesture_cb(lv_event_t *e)
+{
+    if (!lv_obj_has_flag(s_approval_overlay, LV_OBJ_FLAG_HIDDEN)) {
+        return;
+    }
+    lv_indev_t *indev = lv_indev_active();
+    if (indev == NULL) {
+        return;
+    }
+    lv_dir_t dir = lv_indev_get_gesture_dir(indev);
+    if (dir == LV_DIR_TOP) {
+        lv_obj_clear_flag(s_stats_overlay, LV_OBJ_FLAG_HIDDEN);
+    } else if (dir == LV_DIR_BOTTOM) {
+        lv_obj_add_flag(s_stats_overlay, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 static void box_demo_approval_approve_cb(lv_event_t *e)
 {
     audio_play(AUDIO_CUE_ACK);
@@ -459,14 +543,22 @@ static void box_demo_ui_refresh(box_demo_app_t *app)
     char title_text[BOX_DEMO_NAME_MAX + BOX_DEMO_OWNER_MAX + 20];
     char transport_text[80];
     char sessions_text[64];
+    char tokens_text[32];
     char passkey_text[8];
     lv_color_t transport_color;
+
+    uint32_t approvals;
+    uint32_t denials;
+    example_progress_state_t progress_snap;
 
     xSemaphoreTake(app->mutex, portMAX_DELAY);
     state_cache = app->state_cache;
     transport = app->transport_state;
     active_pack = app->active_pack;
     have_active = app->have_active_pack;
+    approvals = app->approval_count;
+    denials = app->denial_count;
+    progress_snap = app->progress;
     strlcpy(display_name, app->display_name, sizeof(display_name));
     strlcpy(advertising_name, app->advertising_name, sizeof(advertising_name));
     strlcpy(owner_name, app->owner_name, sizeof(owner_name));
@@ -504,7 +596,7 @@ static void box_demo_ui_refresh(box_demo_app_t *app)
         transport_color = lv_color_hex(BOX_DEMO_COLOR_MUTED);
     } else if (prompt_active) {
         strlcpy(transport_text, "Approval needed", sizeof(transport_text));
-        transport_color = lv_color_hex(BOX_DEMO_COLOR_ALLOW);
+        transport_color = lv_color_hex(BOX_DEMO_COLOR_ACCENT);
     } else if (transport.tx_ready) {
         strlcpy(transport_text, "Connected and ready", sizeof(transport_text));
         transport_color = lv_color_hex(BOX_DEMO_COLOR_ALLOW);
@@ -524,6 +616,23 @@ static void box_demo_ui_refresh(box_demo_app_t *app)
         }
     } else {
         sessions_text[0] = '\0';
+    }
+
+    // Today's output tokens. Compact format: <1k raw, <1M as "12.3K",
+    // ≥1M as "1.2M". Hidden until we've seen any state from the heartbeat.
+    if (!state_cache.has_state) {
+        tokens_text[0] = '\0';
+    } else {
+        uint64_t t = state_cache.tokens_today;
+        if (t < 1000) {
+            snprintf(tokens_text, sizeof(tokens_text), "%llu today", t);
+        } else if (t < 1000000) {
+            snprintf(tokens_text, sizeof(tokens_text), "%llu.%llu K today",
+                     t / 1000, (t % 1000) / 100);
+        } else {
+            snprintf(tokens_text, sizeof(tokens_text), "%llu.%llu M today",
+                     t / 1000000, (t % 1000000) / 100000);
+        }
     }
 
     // LED alert + audio chime: both fire on the false→true edge of "a
@@ -580,6 +689,33 @@ static void box_demo_ui_refresh(box_demo_app_t *app)
     lv_label_set_text(s_transport_label, transport_text);
     lv_obj_set_style_text_color(s_transport_label, transport_color, 0);
     lv_label_set_text(s_sessions_label, sessions_text);
+    lv_label_set_text(s_tokens_label, tokens_text);
+
+    // Stats overlay values — cheap to update every tick whether visible or not.
+    {
+        char buf[32];
+        uint32_t velocity = example_progress_velocity(&progress_snap);
+        uint32_t level = example_progress_level(state_cache.tokens);
+        uint8_t mood = derive_mood(velocity, approvals, denials);
+
+        snprintf(buf, sizeof(buf), "Lv %lu", (unsigned long)level);
+        lv_label_set_text(s_stats_level_badge, buf);
+
+        snprintf(buf, sizeof(buf), "%lu", (unsigned long)approvals);
+        lv_label_set_text(s_stats_approved_label, buf);
+
+        snprintf(buf, sizeof(buf), "%lu", (unsigned long)denials);
+        lv_label_set_text(s_stats_denied_label, buf);
+
+        format_tokens(buf, sizeof(buf), state_cache.tokens);
+        lv_label_set_text(s_stats_tokens_label, buf);
+
+        format_tokens(buf, sizeof(buf), state_cache.tokens_today);
+        lv_label_set_text(s_stats_today_label, buf);
+
+        lv_label_set_text(s_stats_mood_label, mood_word(mood));
+        lv_obj_set_style_text_color(s_stats_mood_label, lv_color_hex(mood_color(mood)), 0);
+    }
 
     // Approval overlay take-over. Only when a real permission prompt is
     // active (not during BLE pairing — that uses the passkey card below).
@@ -656,7 +792,7 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     s_title_label = lv_label_create(scr);
     lv_obj_set_pos(s_title_label, 20, 40);
     lv_obj_set_size(s_title_label, 320, 30);
-    box_demo_style_label(s_title_label, BOX_DEMO_FONT_PASSKEY, lv_color_hex(BOX_DEMO_COLOR_TEXT));
+    box_demo_style_label(s_title_label, BOX_DEMO_FONT_PASSKEY, lv_color_hex(BOX_DEMO_COLOR_ACCENT));
     lv_obj_set_style_text_align(s_title_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_title_label, LV_LABEL_LONG_DOT);
     lv_label_set_text(s_title_label, "EchoEar");
@@ -720,6 +856,16 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
         lv_label_set_long_mode(s_transcript_labels[i], LV_LABEL_LONG_DOT);
         lv_label_set_text(s_transcript_labels[i], "");
     }
+
+    // Today's output token counter. Lives below the transcript in the bottom
+    // arc. Updated every refresh from state_cache.tokens_today.
+    s_tokens_label = lv_label_create(scr);
+    lv_obj_set_pos(s_tokens_label, 50, 290);
+    lv_obj_set_size(s_tokens_label, 260, 14);
+    box_demo_style_label(s_tokens_label, BOX_DEMO_FONT_META, lv_color_hex(BOX_DEMO_COLOR_MUTED));
+    lv_obj_set_style_text_align(s_tokens_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(s_tokens_label, LV_LABEL_LONG_DOT);
+    lv_label_set_text(s_tokens_label, "");
 
     // Approval overlay: a full-screen take-over that appears whenever a
     // permission prompt is active. Top half = APPROVE (green), bottom half
@@ -786,6 +932,80 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     lv_obj_set_style_text_align(s_approval_hint_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_approval_hint_label, LV_LABEL_LONG_DOT);
     lv_label_set_text(s_approval_hint_label, "");
+
+    // Stats overlay: shown when the user swipes up from the idle screen.
+    // Full-screen takeover. Swipe down dismisses. Approval overlay (when
+    // shown) covers this regardless because it's created last.
+    s_stats_overlay = lv_obj_create(scr);
+    lv_obj_set_size(s_stats_overlay, 360, 360);
+    lv_obj_set_pos(s_stats_overlay, 0, 0);
+    lv_obj_set_style_bg_color(s_stats_overlay, lv_color_hex(BOX_DEMO_COLOR_BG), 0);
+    lv_obj_set_style_bg_opa(s_stats_overlay, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(s_stats_overlay, 0, 0);
+    lv_obj_set_style_pad_all(s_stats_overlay, 0, 0);
+    lv_obj_set_style_radius(s_stats_overlay, 0, 0);
+    lv_obj_clear_flag(s_stats_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_stats_overlay, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t *stats_header = lv_label_create(s_stats_overlay);
+    lv_obj_set_pos(stats_header, 0, 48);
+    lv_obj_set_size(stats_header, 360, 22);
+    box_demo_style_label(stats_header, BOX_DEMO_FONT_TITLE, lv_color_hex(BOX_DEMO_COLOR_MUTED));
+    lv_obj_set_style_text_align(stats_header, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(stats_header, "STATS");
+
+    // Level badge: black text on orange pill, centered.
+    s_stats_level_badge = lv_label_create(s_stats_overlay);
+    lv_obj_set_pos(s_stats_level_badge, 130, 84);
+    lv_obj_set_size(s_stats_level_badge, 100, 36);
+    box_demo_style_label(s_stats_level_badge, BOX_DEMO_FONT_PASSKEY, lv_color_hex(BOX_DEMO_COLOR_BG));
+    lv_obj_set_style_bg_color(s_stats_level_badge, lv_color_hex(BOX_DEMO_COLOR_ACCENT), 0);
+    lv_obj_set_style_bg_opa(s_stats_level_badge, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(s_stats_level_badge, 14, 0);
+    lv_obj_set_style_pad_all(s_stats_level_badge, 4, 0);
+    lv_obj_set_style_text_align(s_stats_level_badge, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(s_stats_level_badge, "Lv 0");
+
+    // Stats rows. Two-column layout: label on the left, value on the right.
+    // We create paired labels for each metric and position them as a pair.
+    struct {
+        lv_obj_t **value_handle;
+        const char *label;
+        int y;
+    } rows[] = {
+        { &s_stats_approved_label, "approved", 148 },
+        { &s_stats_denied_label,   "denied",   170 },
+        { &s_stats_tokens_label,   "tokens",   192 },
+        { &s_stats_today_label,    "today",    214 },
+        { &s_stats_mood_label,     "mood",     236 },
+    };
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        lv_obj_t *lbl = lv_label_create(s_stats_overlay);
+        lv_obj_set_pos(lbl, 80, rows[i].y);
+        lv_obj_set_size(lbl, 100, 18);
+        box_demo_style_label(lbl, BOX_DEMO_FONT_BODY, lv_color_hex(BOX_DEMO_COLOR_MUTED));
+        lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_LEFT, 0);
+        lv_label_set_text(lbl, rows[i].label);
+
+        *rows[i].value_handle = lv_label_create(s_stats_overlay);
+        lv_obj_set_pos(*rows[i].value_handle, 190, rows[i].y);
+        lv_obj_set_size(*rows[i].value_handle, 100, 18);
+        box_demo_style_label(*rows[i].value_handle, BOX_DEMO_FONT_BODY,
+                             lv_color_hex(BOX_DEMO_COLOR_TEXT));
+        lv_obj_set_style_text_align(*rows[i].value_handle, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_label_set_text(*rows[i].value_handle, "0");
+    }
+
+    lv_obj_t *swipe_hint = lv_label_create(s_stats_overlay);
+    lv_obj_set_pos(swipe_hint, 0, 286);
+    lv_obj_set_size(swipe_hint, 360, 14);
+    box_demo_style_label(swipe_hint, BOX_DEMO_FONT_META, lv_color_hex(BOX_DEMO_COLOR_MUTED));
+    lv_obj_set_style_text_align(swipe_hint, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(swipe_hint, "swipe down to close");
+
+    // Listen for gestures on the active screen — swipe up from idle shows
+    // stats, swipe down hides them.
+    lv_obj_add_event_cb(scr, box_demo_screen_gesture_cb, LV_EVENT_GESTURE, NULL);
 
     s_gif_pack_id[0] = '\0';
     s_gif_src[0] = '\0';
