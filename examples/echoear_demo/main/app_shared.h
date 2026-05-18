@@ -45,6 +45,7 @@ typedef struct {
 } box_demo_app_t;
 
 void box_demo_app_init(box_demo_app_t *app);
+void box_demo_stats_load(box_demo_app_t *app);
 
 esp_desktop_buddy_status_reply_t box_demo_status_handler(void *ctx, esp_desktop_buddy_t *buddy);
 esp_desktop_buddy_command_result_t box_demo_name_handler(void *ctx, esp_desktop_buddy_t *buddy, const char *name);

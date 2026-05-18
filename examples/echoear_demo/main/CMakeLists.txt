@@ -4,6 +4,7 @@ idf_component_register(
         "app_commands.c"
         "ui.c"
         "audio.c"
+        "battery.c"
         "charpack_console.c"
     INCLUDE_DIRS "."
     REQUIRES
@@ -18,4 +19,5 @@ idf_component_register(
         esp_vocat
         espressif__led_indicator
         espressif__esp_codec_dev
+        esp_driver_i2c
 )

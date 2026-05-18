@@ -10,6 +10,7 @@
 
 #include "app_shared.h"
 #include "audio.h"
+#include "battery.h"
 
 static const char *TAG = "esp_box_3_demo";
 static box_demo_app_t s_app;
@@ -58,6 +59,10 @@ void app_main(void)
         abort();
     }
 
+    // Restore persisted approval/denial counts + velocity ring buffer so
+    // stats survive a reboot.
+    box_demo_stats_load(&s_app);
+
     example_restore_persisted_string("buddy",
                                        "display_name",
                                        s_app.display_name,
@@ -85,7 +90,8 @@ void app_main(void)
                                                                          sizeof(s_app.advertising_name)));
 
     example_console_init();
-    audio_init();  // codec init logs its own errors; non-fatal if it fails
+    audio_init();    // codec init logs its own errors; non-fatal if it fails
+    battery_init();  // BQ27220 over I2C; logs on failure, non-fatal
     ESP_ERROR_CHECK(box_demo_ui_init(&s_app));
     box_demo_ui_start(&s_app);
     box_demo_charpack_console_start(&s_app);

@@ -11,10 +11,13 @@
 #include "esp_vfs_fat.h"
 #include "example_app_helpers.h"
 #include "example_status.h"
+#include "nvs.h"
 
 #include "app_shared.h"
+#include "battery.h"
 
 #define BOX_DEMO_NVS_NAMESPACE "buddy"
+#define BOX_DEMO_STATS_NS      "buddy_stats"
 #define BOX_DEMO_STATUS_BUF (ESP_DESKTOP_BUDDY_LINE_MAX + 1)
 
 static const char *TAG = "esp_box_3_demo";
@@ -41,6 +44,54 @@ void box_demo_app_init(box_demo_app_t *app)
     example_safe_copy(app->display_name, sizeof(app->display_name), "Box Buddy");
     app->advertising_name[0] = '\0';
     example_safe_copy(app->pack_status, sizeof(app->pack_status), "No active pack");
+}
+
+// NVS persistence for the stats the device shows (approve/deny counts +
+// velocity ring buffer for mood). Load once at boot, save on each decision.
+// NVS sectors take ~100K writes — saving on every approval is well within
+// budget for years of use, and matches what the M5 firmware does.
+void box_demo_stats_load(box_demo_app_t *app)
+{
+    nvs_handle_t h;
+    if (nvs_open(BOX_DEMO_STATS_NS, NVS_READONLY, &h) != ESP_OK) {
+        return;   // first boot, no saved data yet
+    }
+    nvs_get_u32(h, "appr", &app->approval_count);
+    nvs_get_u32(h, "deny", &app->denial_count);
+    nvs_get_u32(h, "nap",  &app->nap_seconds);
+    size_t sz = sizeof(app->progress);
+    if (nvs_get_blob(h, "prog", &app->progress, &sz) != ESP_OK ||
+        sz != sizeof(app->progress)) {
+        memset(&app->progress, 0, sizeof(app->progress));
+    }
+    nvs_close(h);
+    // Transient timing fields don't survive a reboot — ticks from the
+    // previous boot are meaningless. Clear them.
+    app->progress.prompt_timing_active = false;
+    app->progress.prompt_started_tick = 0;
+}
+
+static void box_demo_stats_save(box_demo_app_t *app)
+{
+    nvs_handle_t h;
+    if (nvs_open(BOX_DEMO_STATS_NS, NVS_READWRITE, &h) != ESP_OK) {
+        return;
+    }
+    // Snapshot under mutex so we don't tear a uint32 mid-read on another core.
+    uint32_t appr, deny, nap;
+    example_progress_state_t prog;
+    xSemaphoreTake(app->mutex, portMAX_DELAY);
+    appr = app->approval_count;
+    deny = app->denial_count;
+    nap  = app->nap_seconds;
+    prog = app->progress;
+    xSemaphoreGive(app->mutex);
+    nvs_set_u32(h, "appr", appr);
+    nvs_set_u32(h, "deny", deny);
+    nvs_set_u32(h, "nap",  nap);
+    nvs_set_blob(h, "prog", &prog, sizeof(prog));
+    nvs_commit(h);
+    nvs_close(h);
 }
 
 esp_desktop_buddy_status_reply_t box_demo_status_handler(void *ctx, esp_desktop_buddy_t *buddy)
@@ -97,16 +148,22 @@ esp_desktop_buddy_status_reply_t box_demo_status_handler(void *ctx, esp_desktop_
                                denials) != ESP_OK) {
         return esp_desktop_buddy_status_err(ESP_FAIL, "status_begin_failed");
     }
+    // Battery: read fresh on every status query. Desktop's UI requires the
+    // bat object to be present (omitting it makes the whole panel blank),
+    // so on a failed read we send zeros rather than skip the field.
+    battery_reading_t bat_now = {0};
+    (void)battery_read(&bat_now);
+
     bat = cJSON_AddObjectToObject(doc.root, "bat");
     pack = cJSON_AddObjectToObject(doc.root, "pack");
     if (bat == NULL || pack == NULL) {
         cJSON_Delete(doc.root);
         return esp_desktop_buddy_status_err(ESP_FAIL, "status_section_alloc_failed");
     }
-    cJSON_AddNumberToObject(bat, "pct", 0);
-    cJSON_AddNumberToObject(bat, "mV", 0);
-    cJSON_AddNumberToObject(bat, "mA", 0);
-    cJSON_AddBoolToObject(bat, "usb", false);
+    cJSON_AddNumberToObject(bat, "pct", bat_now.valid ? bat_now.pct : 0);
+    cJSON_AddNumberToObject(bat, "mV",  bat_now.valid ? bat_now.mv  : 0);
+    cJSON_AddNumberToObject(bat, "mA",  bat_now.valid ? bat_now.ma  : 0);
+    cJSON_AddBoolToObject  (bat, "usb", bat_now.valid ? bat_now.usb : false);
     cJSON_AddNumberToObject(doc.sys, "fsFree", (double)fs_free);
     cJSON_AddNumberToObject(doc.sys, "fsTotal", (double)fs_total);
     cJSON_AddNumberToObject(doc.stats, "vel", (double)velocity);
@@ -193,6 +250,7 @@ void box_demo_buddy_event(void *ctx, const esp_desktop_buddy_event_t *event)
                                        &app->approval_count,
                                        &app->denial_count,
                                        event->data.permission_sent.decision);
+        box_demo_stats_save(app);
         break;
     case ESP_DESKTOP_BUDDY_EVENT_TIME_SYNC:
         (void)example_apply_time_sync(app->mutex,
