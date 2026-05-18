@@ -38,3 +38,6 @@ CONFIG_LV_USE_FS_STDIO=y
 CONFIG_LV_FS_STDIO_LETTER=83
 CONFIG_LV_FS_STDIO_PATH="/spiffs/"
 CONFIG_LV_USE_GIF=y
+# VoCat 360x360 round LCD: shrink BSP draw buffer so double-buffer fits in
+# internal RAM (default 100 lines = 72KB each; 40 lines = 29KB each).
+CONFIG_BSP_LCD_DRAW_BUF_HEIGHT=40

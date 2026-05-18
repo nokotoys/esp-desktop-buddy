@@ -13,7 +13,6 @@
 
 #include "esp_check.h"
 #include "esp_log.h"
-#include "iot_button.h"
 #include "widgets/gif/lv_gif.h"
 
 #include "app_shared.h"
@@ -38,6 +37,9 @@
 #define BOX_DEMO_COLOR_MUTED 0x4B5563
 #define BOX_DEMO_COLOR_ALLOW 0x166534
 #define BOX_DEMO_COLOR_DENY 0x991B1B
+#define BOX_DEMO_COLOR_APPROVE_BG 0x16A34A
+#define BOX_DEMO_COLOR_DENY_BG    0xDC2626
+#define BOX_DEMO_COLOR_ON_DARK    0xFFFFFF
 #define BOX_DEMO_GIF_PATH_MAX 224
 
 #define BOX_DEMO_FONT_BODY (&lv_font_montserrat_16)
@@ -53,23 +55,22 @@
 #define BOX_DEMO_FONT_TITLE (&lv_font_montserrat_16)
 #define BOX_DEMO_FONT_META (&lv_font_montserrat_12)
 
-static lv_obj_t *s_title_label;
-static lv_obj_t *s_transport_label;
-static lv_obj_t *s_sessions_label;
-static lv_obj_t *s_prompt_card;
-static lv_obj_t *s_prompt_title_label;
-static lv_obj_t *s_prompt_body_label;
-static lv_obj_t *s_prompt_detail_label;
-static lv_obj_t *s_gif_card;
+// Idle screen layout for the 360x360 round display. Widgets sit on a
+// vertical centerline so they stay inside the visible circle. The GIF
+// card holds the character (or a placeholder); the passkey label takes
+// over the same zone during BLE pairing.
+static lv_obj_t *s_title_label;       // y=58, centered, big
+static lv_obj_t *s_transport_label;   // y=92, centered, small muted
+static lv_obj_t *s_sessions_label;    // y=110, centered, small muted
+static lv_obj_t *s_gif_card;          // y=130, 200x160, centered character zone
 static lv_obj_t *s_gif_obj;
 static lv_obj_t *s_gif_label;
-static lv_obj_t *s_pack_label;
-static lv_obj_t *s_allow_card;
-static lv_obj_t *s_allow_label;
-static lv_obj_t *s_deny_card;
-static lv_obj_t *s_deny_label;
+static lv_obj_t *s_passkey_label;     // takes over gif zone during pairing
+static lv_obj_t *s_pack_label;        // y=298, centered, small muted
+static lv_obj_t *s_approval_overlay;
+static lv_obj_t *s_approval_tool_label;
+static lv_obj_t *s_approval_hint_label;
 static box_demo_app_t *s_ui_app;
-static button_handle_t s_ui_buttons[BSP_BUTTON_NUM];
 static char s_gif_pack_id[EXAMPLE_CHARPACK_PACK_ID_MAX + 1];
 static char s_gif_src[BOX_DEMO_GIF_PATH_MAX];
 
@@ -123,23 +124,6 @@ static void box_demo_copy_ellipsized(char *dst,
     } else {
         dst[keep] = '\0';
     }
-}
-
-static void box_demo_set_action_state(bool prompt_active)
-{
-    uint32_t allow_bg = prompt_active ? 0xDCFCE7 : BOX_DEMO_COLOR_PANEL_ALT;
-    uint32_t deny_bg = prompt_active ? 0xFEE2E2 : BOX_DEMO_COLOR_PANEL_ALT;
-    lv_color_t allow_text = lv_color_hex(prompt_active ? BOX_DEMO_COLOR_TEXT : BOX_DEMO_COLOR_MUTED);
-    lv_color_t deny_text = lv_color_hex(prompt_active ? BOX_DEMO_COLOR_TEXT : BOX_DEMO_COLOR_MUTED);
-
-    box_demo_style_card(s_allow_card,
-                        allow_bg,
-                        prompt_active ? BOX_DEMO_COLOR_ALLOW : BOX_DEMO_COLOR_MUTED);
-    box_demo_style_card(s_deny_card,
-                        deny_bg,
-                        prompt_active ? BOX_DEMO_COLOR_DENY : BOX_DEMO_COLOR_MUTED);
-    lv_obj_set_style_text_color(s_allow_label, allow_text, 0);
-    lv_obj_set_style_text_color(s_deny_label, deny_text, 0);
 }
 
 static bool box_demo_path_exists(const char *path)
@@ -318,43 +302,37 @@ static void box_demo_ui_update_gif(bool have_active,
 #endif
 }
 
-static void box_demo_button_cb(void *button_handle, void *usr_data)
+// VoCat's two top capacitive touchpads cross-talk badly (touching one fires
+// both). Approve/deny is high-stakes, so we route those decisions through
+// the touchscreen overlay only and leave the touchpads unregistered.
+static void box_demo_send_decision(box_demo_app_t *app,
+                                   esp_desktop_buddy_permission_decision_t decision,
+                                   const char *label)
 {
-    box_demo_app_t *app = (box_demo_app_t *)usr_data;
-    button_handle_t button = (button_handle_t)button_handle;
-    int button_index = -1;
-    esp_desktop_buddy_permission_decision_t decision;
-
-    for (int i = 0; i < BSP_BUTTON_NUM; ++i) {
-        if (button == s_ui_buttons[i]) {
-            button_index = i;
-            break;
-        }
-    }
-
     if (app == NULL || app->buddy == NULL) {
         return;
     }
-
-    switch (button_index) {
-    case BSP_BUTTON_MAIN:
-        decision = ESP_DESKTOP_BUDDY_PERMISSION_DECISION_ONCE;
-        break;
-    case BSP_BUTTON_CONFIG:
-        decision = ESP_DESKTOP_BUDDY_PERMISSION_DECISION_DENY;
-        break;
-    default:
-        ESP_LOGI("box_demo_ui", "button index %d pressed", button_index);
-        return;
-    }
-
     if (example_reply_current_prompt(app->mutex,
                                        app->buddy,
                                        app->transport,
                                        &app->state_cache,
                                        decision) != ESP_OK) {
-        ESP_LOGW("box_demo_ui", "no active prompt for button index %d", button_index);
+        ESP_LOGW("box_demo_ui", "no active prompt for %s tap", label);
     }
+}
+
+static void box_demo_approval_approve_cb(lv_event_t *e)
+{
+    box_demo_send_decision((box_demo_app_t *)lv_event_get_user_data(e),
+                           ESP_DESKTOP_BUDDY_PERMISSION_DECISION_ONCE,
+                           "approve");
+}
+
+static void box_demo_approval_deny_cb(lv_event_t *e)
+{
+    box_demo_send_decision((box_demo_app_t *)lv_event_get_user_data(e),
+                           ESP_DESKTOP_BUDDY_PERMISSION_DECISION_DENY,
+                           "deny");
 }
 
 static void box_demo_copy_or_default(char *dst,
@@ -376,23 +354,17 @@ static void box_demo_ui_refresh(box_demo_app_t *app)
     example_buddy_state_cache_t state_cache = {0};
     esp_desktop_buddy_transport_ble_state_t transport = {0};
     example_charpack_info_t active_pack = {0};
-    char pack_status[BOX_DEMO_STATUS_MAX];
     char display_name[BOX_DEMO_NAME_MAX];
     char advertising_name[BOX_DEMO_BLE_NAME_MAX];
-    char advertising_name_compact[BOX_DEMO_BLE_NAME_MAX];
     char owner_name[BOX_DEMO_OWNER_MAX];
     bool have_active;
     bool passkey_active;
     bool prompt_active;
     char title_text[BOX_DEMO_NAME_MAX + BOX_DEMO_OWNER_MAX + 20];
     char transport_text[80];
-    char sessions_text[96];
-    char pack_text[96];
-    char prompt_title[48];
-    char prompt_body[BOX_DEMO_STATUS_MAX + EXAMPLE_BUDDY_MESSAGE_MAX + 48];
-    char prompt_detail[128];
-    char prompt_body_compact[BOX_DEMO_STATUS_MAX + EXAMPLE_BUDDY_MESSAGE_MAX + 48];
-    char prompt_detail_compact[128];
+    char sessions_text[64];
+    char pack_text[64];
+    char passkey_text[8];
     lv_color_t transport_color;
 
     xSemaphoreTake(app->mutex, portMAX_DELAY);
@@ -400,7 +372,6 @@ static void box_demo_ui_refresh(box_demo_app_t *app)
     transport = app->transport_state;
     active_pack = app->active_pack;
     have_active = app->have_active_pack;
-    strlcpy(pack_status, app->pack_status, sizeof(pack_status));
     strlcpy(display_name, app->display_name, sizeof(display_name));
     strlcpy(advertising_name, app->advertising_name, sizeof(advertising_name));
     strlcpy(owner_name, app->owner_name, sizeof(owner_name));
@@ -408,148 +379,96 @@ static void box_demo_ui_refresh(box_demo_app_t *app)
 
     prompt_active = state_cache.has_state && state_cache.prompt.present;
     passkey_active = transport.has_passkey;
-    advertising_name_compact[0] = '\0';
-    if (advertising_name[0] != '\0') {
-        box_demo_copy_ellipsized(advertising_name_compact,
-                                 sizeof(advertising_name_compact),
-                                 advertising_name,
-                                 18);
-    }
 
-    if (owner_name[0] != '\0' && display_name[0] != '\0') {
+    // Title: prefer the friendly owner greeting, fall back through display
+    // name, owner alone, then a generic label. Keep it short so it fits
+    // the circle's chord at y=70 (~280px safe).
+    if (owner_name[0] != '\0') {
         char owner_compact[BOX_DEMO_OWNER_MAX];
-        char display_compact[BOX_DEMO_NAME_MAX];
-
-        box_demo_copy_ellipsized(owner_compact, sizeof(owner_compact), owner_name, 8);
-        box_demo_copy_ellipsized(display_compact, sizeof(display_compact), display_name, 10);
-        snprintf(title_text, sizeof(title_text), "Hi %s, I am %s!", owner_compact, display_compact);
-    } else if (display_name[0] != '\0') {
-        char display_compact[BOX_DEMO_NAME_MAX];
-
-        box_demo_copy_ellipsized(display_compact, sizeof(display_compact), display_name, 18);
-        snprintf(title_text, sizeof(title_text), "I am %s", display_compact);
-    } else if (owner_name[0] != '\0') {
-        char owner_compact[BOX_DEMO_OWNER_MAX];
-
         box_demo_copy_ellipsized(owner_compact, sizeof(owner_compact), owner_name, 14);
-        snprintf(title_text, sizeof(title_text), "Hi %s", owner_compact);
+        snprintf(title_text, sizeof(title_text), "Hi %s!", owner_compact);
+    } else if (display_name[0] != '\0') {
+        box_demo_copy_ellipsized(title_text, sizeof(title_text), display_name, 14);
     } else {
-        strlcpy(title_text, "Desktop Buddy", sizeof(title_text));
+        strlcpy(title_text, "EchoEar", sizeof(title_text));
     }
 
+    // Single-line transport status. Colors: green when ready, muted while
+    // negotiating, plain text during pairing so it doesn't compete with
+    // the big passkey in the middle.
     if (passkey_active) {
-        if (advertising_name_compact[0] != '\0') {
-            snprintf(transport_text,
-                     sizeof(transport_text),
-                     "Pairing %s",
-                     advertising_name_compact);
-        } else {
-            strlcpy(transport_text, "Bluetooth pairing code", sizeof(transport_text));
-        }
+        strlcpy(transport_text, "Pairing — enter code on desktop", sizeof(transport_text));
         transport_color = lv_color_hex(BOX_DEMO_COLOR_TEXT);
     } else if (!transport.connected) {
-        if (advertising_name_compact[0] != '\0') {
-            snprintf(transport_text,
-                     sizeof(transport_text),
-                     "Advertising as %s",
-                     advertising_name_compact);
+        if (advertising_name[0] != '\0') {
+            snprintf(transport_text, sizeof(transport_text),
+                     "Advertising as %s", advertising_name);
         } else {
             strlcpy(transport_text, "Waiting for Claude over BLE", sizeof(transport_text));
         }
         transport_color = lv_color_hex(BOX_DEMO_COLOR_MUTED);
     } else if (prompt_active) {
-        strlcpy(transport_text, "Approval needed now", sizeof(transport_text));
+        strlcpy(transport_text, "Approval needed", sizeof(transport_text));
         transport_color = lv_color_hex(BOX_DEMO_COLOR_ALLOW);
     } else if (transport.tx_ready) {
         strlcpy(transport_text, "Connected and ready", sizeof(transport_text));
         transport_color = lv_color_hex(BOX_DEMO_COLOR_ALLOW);
     } else {
-        strlcpy(transport_text, "Connected, securing channel", sizeof(transport_text));
+        strlcpy(transport_text, "Securing channel…", sizeof(transport_text));
         transport_color = lv_color_hex(BOX_DEMO_COLOR_MUTED);
     }
 
     if (state_cache.has_state) {
-        snprintf(sessions_text,
-                 sizeof(sessions_text),
-                 "Total %lu  Run %lu  Wait %lu",
-                 (unsigned long)state_cache.total,
-                 (unsigned long)state_cache.running,
-                 (unsigned long)state_cache.waiting);
+        if (state_cache.running == 0 && state_cache.waiting == 0) {
+            strlcpy(sessions_text, "idle", sizeof(sessions_text));
+        } else {
+            snprintf(sessions_text, sizeof(sessions_text),
+                     "%lu running · %lu waiting",
+                     (unsigned long)state_cache.running,
+                     (unsigned long)state_cache.waiting);
+        }
     } else {
-        strlcpy(sessions_text, "No session state yet", sizeof(sessions_text));
+        sessions_text[0] = '\0';
     }
 
-    snprintf(pack_text,
-             sizeof(pack_text),
-             have_active ? "Pack: %s" : "Pack: none",
+    snprintf(pack_text, sizeof(pack_text),
+             have_active ? "pack: %s" : "pack: none",
              have_active ? active_pack.pack_id : "");
 
+    // Passkey takeover: hide the GIF zone, show the big 6-digit code.
     if (passkey_active) {
-        strlcpy(prompt_title, "Pair with this passkey", sizeof(prompt_title));
-        snprintf(prompt_body,
-                 sizeof(prompt_body),
-                 "%06lu",
-                 (unsigned long)transport.passkey);
-        strlcpy(prompt_detail,
-                "Enter this code in Claude Desktop to finish secure pairing.",
-                sizeof(prompt_detail));
-        lv_obj_set_style_text_font(s_prompt_body_label, BOX_DEMO_FONT_PASSKEY, 0);
-        box_demo_style_card(s_prompt_card, BOX_DEMO_COLOR_PANEL, BOX_DEMO_COLOR_TEXT);
-    } else if (prompt_active) {
-        snprintf(prompt_title,
-                 sizeof(prompt_title),
-                 "%s request",
-                 state_cache.prompt.tool[0] ? state_cache.prompt.tool : "Approval");
-        box_demo_copy_or_default(prompt_body,
-                                 sizeof(prompt_body),
-                                 state_cache.prompt.hint,
-                                 state_cache.msg[0] ? state_cache.msg : "Approve this request?");
-        if (state_cache.msg[0] != '\0' &&
-            strcmp(state_cache.msg, prompt_body) != 0) {
-            strlcpy(prompt_detail, state_cache.msg, sizeof(prompt_detail));
-        } else {
-            prompt_detail[0] = '\0';
-        }
-        lv_obj_set_style_text_font(s_prompt_body_label, BOX_DEMO_FONT_BODY, 0);
-        box_demo_style_card(s_prompt_card, BOX_DEMO_COLOR_PANEL, BOX_DEMO_COLOR_ALLOW);
+        snprintf(passkey_text, sizeof(passkey_text), "%06lu", (unsigned long)transport.passkey);
+        lv_label_set_text(s_passkey_label, passkey_text);
+        lv_obj_clear_flag(s_passkey_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_gif_card, LV_OBJ_FLAG_HIDDEN);
     } else {
-        strlcpy(prompt_title,
-                state_cache.has_state ? "Ready for the next prompt" : "Waiting for connection",
-                sizeof(prompt_title));
-        box_demo_copy_or_default(prompt_body,
-                                 sizeof(prompt_body),
-                                 state_cache.has_state ? state_cache.msg : NULL,
-                                 "Desktop Buddy shows the next approval prompt here.");
-        strlcpy(prompt_detail,
-                transport.connected
-                    ? "No active prompt. Buttons are idle."
-                    : "Pair Claude Desktop to start.",
-                sizeof(prompt_detail));
-        lv_obj_set_style_text_font(s_prompt_body_label, BOX_DEMO_FONT_BODY, 0);
-        box_demo_style_card(s_prompt_card, BOX_DEMO_COLOR_PANEL, BOX_DEMO_COLOR_PANEL_ALT);
-    }
-
-    if (!passkey_active) {
-        box_demo_copy_ellipsized(prompt_body_compact,
-                                 sizeof(prompt_body_compact),
-                                 prompt_body,
-                                 88);
-        box_demo_copy_ellipsized(prompt_detail_compact,
-                                 sizeof(prompt_detail_compact),
-                                 prompt_detail,
-                                 48);
+        lv_obj_add_flag(s_passkey_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(s_gif_card, LV_OBJ_FLAG_HIDDEN);
+        box_demo_ui_update_gif(have_active, &active_pack);
     }
 
     lv_label_set_text(s_title_label, title_text);
     lv_label_set_text(s_transport_label, transport_text);
     lv_obj_set_style_text_color(s_transport_label, transport_color, 0);
     lv_label_set_text(s_sessions_label, sessions_text);
-    lv_label_set_text(s_prompt_title_label, prompt_title);
-    lv_label_set_text(s_prompt_body_label, passkey_active ? prompt_body : prompt_body_compact);
-    lv_label_set_text(s_prompt_detail_label, passkey_active ? prompt_detail : prompt_detail_compact);
     lv_label_set_text(s_pack_label, pack_text);
-    box_demo_ui_update_gif(have_active, &active_pack);
-    box_demo_set_action_state(prompt_active);
+
+    // Approval overlay take-over. Only when a real permission prompt is
+    // active (not during BLE pairing — that uses the passkey card below).
+    if (prompt_active && !passkey_active) {
+        char tool_text[48];
+        char hint_text[128];
+        snprintf(tool_text, sizeof(tool_text), "%s?",
+                 state_cache.prompt.tool[0] ? state_cache.prompt.tool : "Approval");
+        box_demo_copy_or_default(hint_text, sizeof(hint_text),
+                                 state_cache.prompt.hint,
+                                 state_cache.msg[0] ? state_cache.msg : "");
+        lv_label_set_text(s_approval_tool_label, tool_text);
+        lv_label_set_text(s_approval_hint_label, hint_text);
+        lv_obj_clear_flag(s_approval_overlay, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s_approval_overlay, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 static void box_demo_ui_task(void *arg)
@@ -572,12 +491,9 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     ESP_RETURN_ON_FALSE(bsp_display_start() != NULL, ESP_FAIL, "box_demo_ui", "display start");
     bsp_display_backlight_on();
     s_ui_app = app;
-    memset(s_ui_buttons, 0, sizeof(s_ui_buttons));
-    ESP_ERROR_CHECK(bsp_iot_button_create(s_ui_buttons, NULL, BSP_BUTTON_NUM));
-    for (int i = 0; i < BSP_BUTTON_NUM; ++i) {
-        ESP_ERROR_CHECK(iot_button_register_cb(
-            s_ui_buttons[i], BUTTON_PRESS_DOWN, NULL, box_demo_button_cb, s_ui_app));
-    }
+    // Top capacitive touchpads are intentionally left unregistered: the
+    // two pads cross-talk on this board, and approve/deny is high-stakes.
+    // Decisions go through the touchscreen overlay instead.
 
     if (!bsp_display_lock(BOX_DEMO_UI_LOCK_TIMEOUT_MS)) {
         return ESP_FAIL;
@@ -589,60 +505,42 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
     lv_obj_set_style_text_color(scr, lv_color_hex(BOX_DEMO_COLOR_TEXT), 0);
 
+    // Round-display idle layout: vertical stack down the centerline, sized
+    // so each row stays inside the visible circle (radius 180, center 180,180).
+    // Top: title | transport | sessions text bands
+    // Middle: 200x160 character zone (GIF or placeholder); passkey takes
+    // over the same zone during pairing.
+    // Bottom: pack label.
+
     s_title_label = lv_label_create(scr);
-    lv_obj_set_pos(s_title_label, BOX_DEMO_UI_MARGIN, 6);
-    lv_obj_set_width(s_title_label, BOX_DEMO_UI_CARD_WIDTH);
-    box_demo_style_label(s_title_label, BOX_DEMO_FONT_TITLE, lv_color_hex(BOX_DEMO_COLOR_TEXT));
+    lv_obj_set_pos(s_title_label, 20, 58);
+    lv_obj_set_size(s_title_label, 320, 30);
+    box_demo_style_label(s_title_label, BOX_DEMO_FONT_PASSKEY, lv_color_hex(BOX_DEMO_COLOR_TEXT));
+    lv_obj_set_style_text_align(s_title_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_title_label, LV_LABEL_LONG_DOT);
-    lv_label_set_text(s_title_label, "Desktop Buddy");
+    lv_label_set_text(s_title_label, "EchoEar");
 
     s_transport_label = lv_label_create(scr);
-    lv_obj_set_pos(s_transport_label, BOX_DEMO_UI_MARGIN, 26);
-    lv_obj_set_width(s_transport_label, BOX_DEMO_UI_CARD_WIDTH);
+    lv_obj_set_pos(s_transport_label, 20, 92);
+    lv_obj_set_size(s_transport_label, 320, 16);
     box_demo_style_label(s_transport_label, BOX_DEMO_FONT_META, lv_color_hex(BOX_DEMO_COLOR_MUTED));
+    lv_obj_set_style_text_align(s_transport_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(s_transport_label, LV_LABEL_LONG_DOT);
     lv_label_set_text(s_transport_label, "Waiting for Claude over BLE");
 
     s_sessions_label = lv_label_create(scr);
-    lv_obj_set_pos(s_sessions_label, BOX_DEMO_UI_MARGIN, 42);
-    lv_obj_set_width(s_sessions_label, BOX_DEMO_UI_CARD_WIDTH);
+    lv_obj_set_pos(s_sessions_label, 20, 110);
+    lv_obj_set_size(s_sessions_label, 320, 16);
     box_demo_style_label(s_sessions_label, BOX_DEMO_FONT_META, lv_color_hex(BOX_DEMO_COLOR_MUTED));
-    lv_label_set_text(s_sessions_label, "No session state yet");
-
-    s_prompt_card = lv_obj_create(scr);
-    lv_obj_set_pos(s_prompt_card, BOX_DEMO_UI_MARGIN, 58);
-    lv_obj_set_size(s_prompt_card, BOX_DEMO_UI_PROMPT_WIDTH, BOX_DEMO_UI_PROMPT_HEIGHT);
-    box_demo_style_card(s_prompt_card, BOX_DEMO_COLOR_PANEL, BOX_DEMO_COLOR_PANEL_ALT);
-
-    s_prompt_title_label = lv_label_create(s_prompt_card);
-    lv_obj_set_pos(s_prompt_title_label, 8, 8);
-    lv_obj_set_width(s_prompt_title_label, BOX_DEMO_UI_PROMPT_TEXT_WIDTH);
-    box_demo_style_label(s_prompt_title_label,
-                         BOX_DEMO_FONT_META,
-                         lv_color_hex(BOX_DEMO_COLOR_MUTED));
-    lv_label_set_text(s_prompt_title_label, "Waiting for connection");
-
-    s_prompt_body_label = lv_label_create(s_prompt_card);
-    lv_obj_set_pos(s_prompt_body_label, 8, 28);
-    lv_obj_set_size(s_prompt_body_label, BOX_DEMO_UI_PROMPT_TEXT_WIDTH, BOX_DEMO_UI_PROMPT_BODY_HEIGHT);
-    box_demo_style_label(s_prompt_body_label,
-                         BOX_DEMO_FONT_BODY,
-                         lv_color_hex(BOX_DEMO_COLOR_TEXT));
-    lv_label_set_long_mode(s_prompt_body_label, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(s_prompt_body_label, "Desktop Buddy will show the next approval request here.");
-
-    s_prompt_detail_label = lv_label_create(s_prompt_card);
-    lv_obj_set_pos(s_prompt_detail_label, 8, 92);
-    lv_obj_set_width(s_prompt_detail_label, BOX_DEMO_UI_PROMPT_TEXT_WIDTH);
-    box_demo_style_label(s_prompt_detail_label,
-                         BOX_DEMO_FONT_META,
-                         lv_color_hex(BOX_DEMO_COLOR_MUTED));
-    lv_label_set_long_mode(s_prompt_detail_label, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(s_prompt_detail_label, "Pair Claude Desktop to start receiving prompts.");
+    lv_obj_set_style_text_align(s_sessions_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(s_sessions_label, LV_LABEL_LONG_DOT);
+    lv_label_set_text(s_sessions_label, "");
 
     s_gif_card = lv_obj_create(scr);
-    lv_obj_set_pos(s_gif_card, 214, 58);
-    lv_obj_set_size(s_gif_card, BOX_DEMO_UI_GIF_WIDTH, BOX_DEMO_UI_GIF_HEIGHT);
+    lv_obj_set_pos(s_gif_card, 80, 132);
+    lv_obj_set_size(s_gif_card, 200, 156);
     box_demo_style_card(s_gif_card, BOX_DEMO_COLOR_PANEL_ALT, BOX_DEMO_COLOR_PANEL_ALT);
+    lv_obj_clear_flag(s_gif_card, LV_OBJ_FLAG_SCROLLABLE);
 
     s_gif_obj = lv_gif_create(s_gif_card);
     lv_gif_set_color_format(s_gif_obj, LV_COLOR_FORMAT_RGB565);
@@ -650,47 +548,99 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     lv_obj_add_flag(s_gif_obj, LV_OBJ_FLAG_HIDDEN);
 
     s_gif_label = lv_label_create(s_gif_card);
-    lv_obj_set_width(s_gif_label, BOX_DEMO_UI_GIF_TEXT_WIDTH);
+    lv_obj_set_width(s_gif_label, 180);
     lv_obj_center(s_gif_label);
     lv_label_set_long_mode(s_gif_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(s_gif_label, LV_TEXT_ALIGN_CENTER, 0);
     box_demo_style_label(s_gif_label, BOX_DEMO_FONT_META, lv_color_hex(BOX_DEMO_COLOR_MUTED));
     lv_label_set_text(s_gif_label, "No active pack");
 
+    // Passkey label: hidden by default. During pairing it replaces the GIF
+    // card and shows the 6-digit code at title-size font.
+    s_passkey_label = lv_label_create(scr);
+    lv_obj_set_pos(s_passkey_label, 60, 180);
+    lv_obj_set_size(s_passkey_label, 240, 40);
+    box_demo_style_label(s_passkey_label, BOX_DEMO_FONT_PASSKEY, lv_color_hex(BOX_DEMO_COLOR_TEXT));
+    lv_obj_set_style_text_align(s_passkey_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(s_passkey_label, "");
+    lv_obj_add_flag(s_passkey_label, LV_OBJ_FLAG_HIDDEN);
+
     s_pack_label = lv_label_create(scr);
-    lv_obj_set_pos(s_pack_label, BOX_DEMO_UI_MARGIN, 188);
-    lv_obj_set_width(s_pack_label, BOX_DEMO_UI_CARD_WIDTH);
+    lv_obj_set_pos(s_pack_label, 30, 298);
+    lv_obj_set_size(s_pack_label, 300, 14);
     box_demo_style_label(s_pack_label, BOX_DEMO_FONT_META, lv_color_hex(BOX_DEMO_COLOR_MUTED));
-    lv_label_set_long_mode(s_pack_label, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(s_pack_label, "pack <none>");
+    lv_obj_set_style_text_align(s_pack_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(s_pack_label, LV_LABEL_LONG_DOT);
+    lv_label_set_text(s_pack_label, "pack: none");
 
-    s_allow_card = lv_obj_create(scr);
-    lv_obj_set_pos(s_allow_card, BOX_DEMO_UI_MARGIN, 204);
-    lv_obj_set_size(s_allow_card, 206, 28);
-    box_demo_style_card(s_allow_card, BOX_DEMO_COLOR_PANEL_ALT, BOX_DEMO_COLOR_MUTED);
+    // Approval overlay: a full-screen take-over that appears whenever a
+    // permission prompt is active. Top half = APPROVE (green), bottom half
+    // = DENY (red), with the tool name + hint in the band between them.
+    // On the 360x360 round display the rectangular halves naturally clip
+    // to half-circles, giving big unambiguous touch targets.
+    s_approval_overlay = lv_obj_create(scr);
+    lv_obj_set_size(s_approval_overlay, 360, 360);
+    lv_obj_set_pos(s_approval_overlay, 0, 0);
+    lv_obj_set_style_bg_color(s_approval_overlay, lv_color_hex(BOX_DEMO_COLOR_BG), 0);
+    lv_obj_set_style_bg_opa(s_approval_overlay, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(s_approval_overlay, 0, 0);
+    lv_obj_set_style_pad_all(s_approval_overlay, 0, 0);
+    lv_obj_set_style_radius(s_approval_overlay, 0, 0);
+    lv_obj_clear_flag(s_approval_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_approval_overlay, LV_OBJ_FLAG_HIDDEN);
 
-    s_allow_label = lv_label_create(s_allow_card);
-    lv_obj_center(s_allow_label);
-    box_demo_style_label(s_allow_label,
-                         BOX_DEMO_FONT_ACTION,
-                         lv_color_hex(BOX_DEMO_COLOR_MUTED));
-    lv_label_set_text(s_allow_label, "MAIN ALLOW");
+    lv_obj_t *approve_btn = lv_obj_create(s_approval_overlay);
+    lv_obj_set_size(approve_btn, 360, 160);
+    lv_obj_set_pos(approve_btn, 0, 0);
+    lv_obj_set_style_bg_color(approve_btn, lv_color_hex(BOX_DEMO_COLOR_APPROVE_BG), 0);
+    lv_obj_set_style_bg_opa(approve_btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(approve_btn, 0, 0);
+    lv_obj_set_style_radius(approve_btn, 0, 0);
+    lv_obj_set_style_pad_all(approve_btn, 0, 0);
+    lv_obj_clear_flag(approve_btn, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(approve_btn, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(approve_btn, box_demo_approval_approve_cb, LV_EVENT_CLICKED, s_ui_app);
 
-    s_deny_card = lv_obj_create(scr);
-    lv_obj_set_pos(s_deny_card, 220, 204);
-    lv_obj_set_size(s_deny_card, 92, 28);
-    box_demo_style_card(s_deny_card, BOX_DEMO_COLOR_PANEL_ALT, BOX_DEMO_COLOR_MUTED);
+    lv_obj_t *approve_lbl = lv_label_create(approve_btn);
+    lv_obj_center(approve_lbl);
+    box_demo_style_label(approve_lbl, BOX_DEMO_FONT_PASSKEY, lv_color_hex(BOX_DEMO_COLOR_ON_DARK));
+    lv_label_set_text(approve_lbl, "APPROVE");
 
-    s_deny_label = lv_label_create(s_deny_card);
-    lv_obj_center(s_deny_label);
-    box_demo_style_label(s_deny_label,
-                         BOX_DEMO_FONT_ACTION,
-                         lv_color_hex(BOX_DEMO_COLOR_MUTED));
-    lv_label_set_text(s_deny_label, "BOOT DENY");
+    lv_obj_t *deny_btn = lv_obj_create(s_approval_overlay);
+    lv_obj_set_size(deny_btn, 360, 160);
+    lv_obj_set_pos(deny_btn, 0, 200);
+    lv_obj_set_style_bg_color(deny_btn, lv_color_hex(BOX_DEMO_COLOR_DENY_BG), 0);
+    lv_obj_set_style_bg_opa(deny_btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(deny_btn, 0, 0);
+    lv_obj_set_style_radius(deny_btn, 0, 0);
+    lv_obj_set_style_pad_all(deny_btn, 0, 0);
+    lv_obj_clear_flag(deny_btn, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(deny_btn, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(deny_btn, box_demo_approval_deny_cb, LV_EVENT_CLICKED, s_ui_app);
+
+    lv_obj_t *deny_lbl = lv_label_create(deny_btn);
+    lv_obj_center(deny_lbl);
+    box_demo_style_label(deny_lbl, BOX_DEMO_FONT_PASSKEY, lv_color_hex(BOX_DEMO_COLOR_ON_DARK));
+    lv_label_set_text(deny_lbl, "DENY");
+
+    s_approval_tool_label = lv_label_create(s_approval_overlay);
+    lv_obj_set_pos(s_approval_tool_label, 0, 166);
+    lv_obj_set_size(s_approval_tool_label, 360, 18);
+    box_demo_style_label(s_approval_tool_label, BOX_DEMO_FONT_TITLE, lv_color_hex(BOX_DEMO_COLOR_TEXT));
+    lv_obj_set_style_text_align(s_approval_tool_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(s_approval_tool_label, LV_LABEL_LONG_DOT);
+    lv_label_set_text(s_approval_tool_label, "");
+
+    s_approval_hint_label = lv_label_create(s_approval_overlay);
+    lv_obj_set_pos(s_approval_hint_label, 30, 184);
+    lv_obj_set_size(s_approval_hint_label, 300, 14);
+    box_demo_style_label(s_approval_hint_label, BOX_DEMO_FONT_META, lv_color_hex(BOX_DEMO_COLOR_MUTED));
+    lv_obj_set_style_text_align(s_approval_hint_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(s_approval_hint_label, LV_LABEL_LONG_DOT);
+    lv_label_set_text(s_approval_hint_label, "");
 
     s_gif_pack_id[0] = '\0';
     s_gif_src[0] = '\0';
-    box_demo_set_action_state(false);
 
     bsp_display_unlock();
     return ESP_OK;
