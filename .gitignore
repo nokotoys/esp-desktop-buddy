@@ -15,4 +15,4 @@ dependencies.lock
 
 tools/.venv-*/
 tools/tests/.artifacts/
-/examples/echoear_demo/.cache
+/examples/noko_demo/.cache

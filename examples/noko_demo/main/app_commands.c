@@ -16,13 +16,13 @@
 #include "app_shared.h"
 #include "battery.h"
 
-#define BOX_DEMO_NVS_NAMESPACE "buddy"
-#define BOX_DEMO_STATS_NS      "buddy_stats"
-#define BOX_DEMO_STATUS_BUF (ESP_DESKTOP_BUDDY_LINE_MAX + 1)
+#define NOKO_NVS_NAMESPACE "buddy"
+#define NOKO_STATS_NS      "buddy_stats"
+#define NOKO_STATUS_BUF (ESP_DESKTOP_BUDDY_LINE_MAX + 1)
 
-static const char *TAG = "esp_box_3_demo";
+static const char *TAG = "noko_demo";
 
-static const char *box_demo_pack_mode_name(example_charpack_mode_t mode)
+static const char *noko_pack_mode_name(example_charpack_mode_t mode)
 {
     switch (mode) {
     case EXAMPLE_CHARPACK_MODE_GIF:
@@ -34,7 +34,7 @@ static const char *box_demo_pack_mode_name(example_charpack_mode_t mode)
     }
 }
 
-void box_demo_app_init(box_demo_app_t *app)
+void noko_app_init(noko_app_t *app)
 {
     if (app == NULL) {
         return;
@@ -50,10 +50,10 @@ void box_demo_app_init(box_demo_app_t *app)
 // velocity ring buffer for mood). Load once at boot, save on each decision.
 // NVS sectors take ~100K writes — saving on every approval is well within
 // budget for years of use, and matches what the M5 firmware does.
-void box_demo_stats_load(box_demo_app_t *app)
+void noko_stats_load(noko_app_t *app)
 {
     nvs_handle_t h;
-    if (nvs_open(BOX_DEMO_STATS_NS, NVS_READONLY, &h) != ESP_OK) {
+    if (nvs_open(NOKO_STATS_NS, NVS_READONLY, &h) != ESP_OK) {
         return;   // first boot, no saved data yet
     }
     nvs_get_u32(h, "appr", &app->approval_count);
@@ -71,10 +71,10 @@ void box_demo_stats_load(box_demo_app_t *app)
     app->progress.prompt_started_tick = 0;
 }
 
-static void box_demo_stats_save(box_demo_app_t *app)
+static void noko_stats_save(noko_app_t *app)
 {
     nvs_handle_t h;
-    if (nvs_open(BOX_DEMO_STATS_NS, NVS_READWRITE, &h) != ESP_OK) {
+    if (nvs_open(NOKO_STATS_NS, NVS_READWRITE, &h) != ESP_OK) {
         return;
     }
     // Snapshot under mutex so we don't tear a uint32 mid-read on another core.
@@ -94,14 +94,14 @@ static void box_demo_stats_save(box_demo_app_t *app)
     nvs_close(h);
 }
 
-esp_desktop_buddy_status_reply_t box_demo_status_handler(void *ctx, esp_desktop_buddy_t *buddy)
+esp_desktop_buddy_status_reply_t noko_status_handler(void *ctx, esp_desktop_buddy_t *buddy)
 {
-    box_demo_app_t *app = (box_demo_app_t *)ctx;
-    static char status_json[BOX_DEMO_STATUS_BUF];
+    noko_app_t *app = (noko_app_t *)ctx;
+    static char status_json[NOKO_STATUS_BUF];
     esp_desktop_buddy_transport_ble_state_t transport_state = {0};
-    char display_name[BOX_DEMO_NAME_MAX];
-    char owner_name[BOX_DEMO_OWNER_MAX];
-    char pack_status[BOX_DEMO_STATUS_MAX];
+    char display_name[NOKO_NAME_MAX];
+    char owner_name[NOKO_OWNER_MAX];
+    char pack_status[NOKO_STATUS_MAX];
     uint32_t approvals;
     uint32_t denials;
     uint32_t nap_seconds;
@@ -173,28 +173,28 @@ esp_desktop_buddy_status_reply_t box_demo_status_handler(void *ctx, esp_desktop_
     cJSON_AddStringToObject(pack, "active", have_active_pack ? active_pack.pack_id : "");
     cJSON_AddStringToObject(pack,
                             "mode",
-                            have_active_pack ? box_demo_pack_mode_name(active_pack.mode) : "");
+                            have_active_pack ? noko_pack_mode_name(active_pack.mode) : "");
     cJSON_AddStringToObject(pack, "status", pack_status);
 
     return example_status_from_json(doc.root, status_json, sizeof(status_json));
 }
 
-esp_desktop_buddy_command_result_t box_demo_name_handler(void *ctx, esp_desktop_buddy_t *buddy, const char *name)
+esp_desktop_buddy_command_result_t noko_name_handler(void *ctx, esp_desktop_buddy_t *buddy, const char *name)
 {
-    box_demo_app_t *app = (box_demo_app_t *)ctx;
+    noko_app_t *app = (noko_app_t *)ctx;
 
     (void)buddy;
     return example_update_persisted_string(app->mutex,
                                              app->display_name,
                                              sizeof(app->display_name),
                                              name,
-                                             BOX_DEMO_NVS_NAMESPACE,
+                                             NOKO_NVS_NAMESPACE,
                                              "display_name");
 }
 
-esp_desktop_buddy_command_result_t box_demo_owner_handler(void *ctx, esp_desktop_buddy_t *buddy, const char *name)
+esp_desktop_buddy_command_result_t noko_owner_handler(void *ctx, esp_desktop_buddy_t *buddy, const char *name)
 {
-    box_demo_app_t *app = (box_demo_app_t *)ctx;
+    noko_app_t *app = (noko_app_t *)ctx;
 
     (void)buddy;
     return example_update_string_field(app->mutex,
@@ -203,17 +203,17 @@ esp_desktop_buddy_command_result_t box_demo_owner_handler(void *ctx, esp_desktop
                                        name);
 }
 
-esp_desktop_buddy_command_result_t box_demo_unpair_handler(void *ctx, esp_desktop_buddy_t *buddy)
+esp_desktop_buddy_command_result_t noko_unpair_handler(void *ctx, esp_desktop_buddy_t *buddy)
 {
-    box_demo_app_t *app = (box_demo_app_t *)ctx;
+    noko_app_t *app = (noko_app_t *)ctx;
 
     (void)buddy;
     return example_clear_bonds(app->transport);
 }
 
-void box_demo_buddy_event(void *ctx, const esp_desktop_buddy_event_t *event)
+void noko_buddy_event(void *ctx, const esp_desktop_buddy_event_t *event)
 {
-    box_demo_app_t *app = (box_demo_app_t *)ctx;
+    noko_app_t *app = (noko_app_t *)ctx;
 
     if (app == NULL || event == NULL) {
         return;
@@ -250,7 +250,7 @@ void box_demo_buddy_event(void *ctx, const esp_desktop_buddy_event_t *event)
                                        &app->approval_count,
                                        &app->denial_count,
                                        event->data.permission_sent.decision);
-        box_demo_stats_save(app);
+        noko_stats_save(app);
         break;
     case ESP_DESKTOP_BUDDY_EVENT_TIME_SYNC:
         (void)example_apply_time_sync(app->mutex,
@@ -268,9 +268,9 @@ void box_demo_buddy_event(void *ctx, const esp_desktop_buddy_event_t *event)
     }
 }
 
-void box_demo_transport_event(void *ctx, const esp_desktop_buddy_transport_ble_event_t *event)
+void noko_transport_event(void *ctx, const esp_desktop_buddy_transport_ble_event_t *event)
 {
-    box_demo_app_t *app = (box_demo_app_t *)ctx;
+    noko_app_t *app = (noko_app_t *)ctx;
 
     if (app == NULL || event == NULL) {
         return;
@@ -283,9 +283,9 @@ void box_demo_transport_event(void *ctx, const esp_desktop_buddy_transport_ble_e
                                    event);
 }
 
-void box_demo_charpack_event(void *ctx, const example_charpack_event_t *event)
+void noko_charpack_event(void *ctx, const example_charpack_event_t *event)
 {
-    box_demo_app_t *app = (box_demo_app_t *)ctx;
+    noko_app_t *app = (noko_app_t *)ctx;
     example_charpack_info_t active_info = {0};
     bool refresh_active = false;
 
@@ -330,16 +330,16 @@ void box_demo_charpack_event(void *ctx, const example_charpack_event_t *event)
     xSemaphoreGive(app->mutex);
 }
 
-void box_demo_print_state(box_demo_app_t *app, FILE *out)
+void noko_print_state(noko_app_t *app, FILE *out)
 {
     example_buddy_state_cache_t state_cache = {0};
     esp_desktop_buddy_transport_ble_state_t transport = {0};
     example_charpack_info_t active = {0};
     bool have_active;
-    char display_name[BOX_DEMO_NAME_MAX];
-    char advertising_name[BOX_DEMO_BLE_NAME_MAX];
-    char owner_name[BOX_DEMO_OWNER_MAX];
-    char pack_status[BOX_DEMO_STATUS_MAX];
+    char display_name[NOKO_NAME_MAX];
+    char advertising_name[NOKO_BLE_NAME_MAX];
+    char owner_name[NOKO_OWNER_MAX];
+    char pack_status[NOKO_STATUS_MAX];
 
     xSemaphoreTake(app->mutex, portMAX_DELAY);
     state_cache = app->state_cache;

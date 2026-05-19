@@ -12,23 +12,23 @@
 #include "audio.h"
 #include "battery.h"
 
-static const char *TAG = "esp_box_3_demo";
-static box_demo_app_t s_app;
+static const char *TAG = "noko_demo";
+static noko_app_t s_app;
 
 void app_main(void)
 {
     const esp_desktop_buddy_folder_push_sink_t *sink;
     esp_desktop_buddy_config_t buddy_config = {
         .event_sink = {
-            .on_event = box_demo_buddy_event,
+            .on_event = noko_buddy_event,
             .ctx = &s_app,
         },
         .handlers = {
             .ctx = &s_app,
-            .on_status = box_demo_status_handler,
-            .on_name = box_demo_name_handler,
-            .on_owner = box_demo_owner_handler,
-            .on_unpair = box_demo_unpair_handler,
+            .on_status = noko_status_handler,
+            .on_name = noko_name_handler,
+            .on_owner = noko_owner_handler,
+            .on_unpair = noko_unpair_handler,
         },
     };
     esp_desktop_buddy_transport_ble_config_t transport_config = {
@@ -38,7 +38,7 @@ void app_main(void)
             .secure_connections = true,
             .io_capability = ESP_DESKTOP_BUDDY_TRANSPORT_BLE_IO_CAP_DISPLAY_ONLY,
         },
-        .on_event = box_demo_transport_event,
+        .on_event = noko_transport_event,
         .event_ctx = &s_app,
     };
     example_charpack_config_t charpack_config = {
@@ -46,14 +46,14 @@ void app_main(void)
         .packs_root = NULL,
         .staging_root = NULL,
         .format_if_mount_failed = true,
-        .on_event = box_demo_charpack_event,
+        .on_event = noko_charpack_event,
         .event_ctx = &s_app,
     };
     esp_desktop_buddy_folder_push_config_t folder_push_config = {0};
 
     ESP_ERROR_CHECK(example_init_nvs());
 
-    box_demo_app_init(&s_app);
+    noko_app_init(&s_app);
     s_app.mutex = xSemaphoreCreateMutex();
     if (s_app.mutex == NULL) {
         abort();
@@ -61,7 +61,7 @@ void app_main(void)
 
     // Restore persisted approval/denial counts + velocity ring buffer so
     // stats survive a reboot.
-    box_demo_stats_load(&s_app);
+    noko_stats_load(&s_app);
 
     example_restore_persisted_string("buddy",
                                        "display_name",
@@ -92,9 +92,9 @@ void app_main(void)
     example_console_init();
     audio_init();    // codec init logs its own errors; non-fatal if it fails
     battery_init();  // BQ27220 over I2C; logs on failure, non-fatal
-    ESP_ERROR_CHECK(box_demo_ui_init(&s_app));
-    box_demo_ui_start(&s_app);
-    box_demo_charpack_console_start(&s_app);
+    ESP_ERROR_CHECK(noko_ui_init(&s_app));
+    noko_ui_start(&s_app);
+    noko_charpack_console_start(&s_app);
 
     ESP_LOGI(TAG,
              "ready: ESP-BOX-3 Desktop Buddy demo (advertising as %s)",

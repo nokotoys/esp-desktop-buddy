@@ -11,11 +11,11 @@
 #include "app_shared.h"
 #include "example_console.h"
 
-#define BOX_DEMO_CONSOLE_STACK 4096
+#define NOKO_CONSOLE_STACK 4096
 
-static void box_demo_charpack_console_print_state(void *ctx, FILE *out)
+static void noko_charpack_console_print_state(void *ctx, FILE *out)
 {
-    box_demo_print_state((box_demo_app_t *)ctx, out);
+    noko_print_state((noko_app_t *)ctx, out);
 }
 
 static example_console_common_cmds_t s_common_console_cmds = {
@@ -23,13 +23,13 @@ static example_console_common_cmds_t s_common_console_cmds = {
     .buddy = NULL,
     .transport = NULL,
     .state_cache = NULL,
-    .print_state = box_demo_charpack_console_print_state,
+    .print_state = noko_charpack_console_print_state,
     .state_ctx = NULL,
 };
 
-static int box_demo_charpack_console_packs(void *ctx, int argc, char **argv)
+static int noko_charpack_console_packs(void *ctx, int argc, char **argv)
 {
-    box_demo_app_t *app = (box_demo_app_t *)ctx;
+    noko_app_t *app = (noko_app_t *)ctx;
     example_charpack_info_t items[8];
     size_t count = 0;
 
@@ -53,9 +53,9 @@ static int box_demo_charpack_console_packs(void *ctx, int argc, char **argv)
     return 0;
 }
 
-static int box_demo_charpack_console_pack(void *ctx, int argc, char **argv)
+static int noko_charpack_console_pack(void *ctx, int argc, char **argv)
 {
-    box_demo_app_t *app = (box_demo_app_t *)ctx;
+    noko_app_t *app = (noko_app_t *)ctx;
     example_charpack_info_t items[8];
     char *end = NULL;
     size_t count = 0;
@@ -90,18 +90,18 @@ static int box_demo_charpack_console_pack(void *ctx, int argc, char **argv)
     return 1;
 }
 
-static const example_console_command_t s_box_demo_commands[] = {
+static const example_console_command_t s_noko_commands[] = {
     {
         .command = "packs",
         .help = "List installed character packs.",
         .hint = NULL,
-        .handler = box_demo_charpack_console_packs,
+        .handler = noko_charpack_console_packs,
     },
     {
         .command = "pack",
         .help = "Manage the active character pack.",
         .hint = "use <index>",
-        .handler = box_demo_charpack_console_pack,
+        .handler = noko_charpack_console_pack,
     },
 };
 
@@ -110,15 +110,15 @@ static example_console_config_t s_console = {
     .banner =
         "ESP-BOX-3 Desktop Buddy console\n"
         "Type 'help' to list commands.\n",
-    .commands = s_box_demo_commands,
-    .command_count = sizeof(s_box_demo_commands) / sizeof(s_box_demo_commands[0]),
+    .commands = s_noko_commands,
+    .command_count = sizeof(s_noko_commands) / sizeof(s_noko_commands[0]),
     .common_cmds = &s_common_console_cmds,
     .ctx = NULL,
-    .task_stack_size = BOX_DEMO_CONSOLE_STACK,
+    .task_stack_size = NOKO_CONSOLE_STACK,
     .task_priority = 4,
 };
 
-void box_demo_charpack_console_start(box_demo_app_t *app)
+void noko_charpack_console_start(noko_app_t *app)
 {
     s_console.ctx = app;
     s_common_console_cmds.mutex = app->mutex;

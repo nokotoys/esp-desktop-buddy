@@ -20,46 +20,46 @@
 #include "audio.h"
 #include "example_app_helpers.h"
 
-#define BOX_DEMO_UI_STACK 8192
-#define BOX_DEMO_UI_POLL_MS 200
-#define BOX_DEMO_UI_LOCK_TIMEOUT_MS 1000
-#define BOX_DEMO_UI_MARGIN 8
-#define BOX_DEMO_UI_CARD_WIDTH 304
-#define BOX_DEMO_UI_PROMPT_WIDTH 198
-#define BOX_DEMO_UI_PROMPT_HEIGHT 126
-#define BOX_DEMO_UI_PROMPT_TEXT_WIDTH 182
-#define BOX_DEMO_UI_PROMPT_BODY_HEIGHT 58
-#define BOX_DEMO_UI_GIF_WIDTH 98
-#define BOX_DEMO_UI_GIF_HEIGHT 126
-#define BOX_DEMO_UI_GIF_TEXT_WIDTH 78
+#define NOKO_UI_STACK 8192
+#define NOKO_UI_POLL_MS 200
+#define NOKO_UI_LOCK_TIMEOUT_MS 1000
+#define NOKO_UI_MARGIN 8
+#define NOKO_UI_CARD_WIDTH 304
+#define NOKO_UI_PROMPT_WIDTH 198
+#define NOKO_UI_PROMPT_HEIGHT 126
+#define NOKO_UI_PROMPT_TEXT_WIDTH 182
+#define NOKO_UI_PROMPT_BODY_HEIGHT 58
+#define NOKO_UI_GIF_WIDTH 98
+#define NOKO_UI_GIF_HEIGHT 126
+#define NOKO_UI_GIF_TEXT_WIDTH 78
 // Dark theme with Claude/M5 orange accent. Matches the original
 // claude-desktop-buddy firmware's aesthetic (black background, orange
 // for branding/attention).
-#define BOX_DEMO_COLOR_BG         0x000000  // pure black background
-#define BOX_DEMO_COLOR_PANEL      0x111111  // slight contrast for panels
-#define BOX_DEMO_COLOR_PANEL_ALT  0x000000  // matches bg = invisible card
-#define BOX_DEMO_COLOR_TEXT       0xFFFFFF  // body text on dark
-#define BOX_DEMO_COLOR_MUTED      0x9CA3AF  // medium gray, readable on dark
-#define BOX_DEMO_COLOR_ALLOW      0x22C55E  // bright green for "ready"
-#define BOX_DEMO_COLOR_DENY       0xEF4444  // bright red
-#define BOX_DEMO_COLOR_ACCENT     0xFF6B35  // Claude/M5 orange — branding + alert
-#define BOX_DEMO_COLOR_APPROVE_BG 0x16A34A  // approval overlay top half
-#define BOX_DEMO_COLOR_DENY_BG    0xDC2626  // approval overlay bottom half
-#define BOX_DEMO_COLOR_ON_DARK    0xFFFFFF
-#define BOX_DEMO_GIF_PATH_MAX 224
+#define NOKO_COLOR_BG         0x000000  // pure black background
+#define NOKO_COLOR_PANEL      0x111111  // slight contrast for panels
+#define NOKO_COLOR_PANEL_ALT  0x000000  // matches bg = invisible card
+#define NOKO_COLOR_TEXT       0xFFFFFF  // body text on dark
+#define NOKO_COLOR_MUTED      0x9CA3AF  // medium gray, readable on dark
+#define NOKO_COLOR_ALLOW      0x22C55E  // bright green for "ready"
+#define NOKO_COLOR_DENY       0xEF4444  // bright red
+#define NOKO_COLOR_ACCENT     0xFF6B35  // Claude/M5 orange — branding + alert
+#define NOKO_COLOR_APPROVE_BG 0x16A34A  // approval overlay top half
+#define NOKO_COLOR_DENY_BG    0xDC2626  // approval overlay bottom half
+#define NOKO_COLOR_ON_DARK    0xFFFFFF
+#define NOKO_GIF_PATH_MAX 224
 
-#define BOX_DEMO_FONT_BODY (&lv_font_montserrat_16)
+#define NOKO_FONT_BODY (&lv_font_montserrat_16)
 
 #if CONFIG_LV_FONT_MONTSERRAT_24
-#define BOX_DEMO_FONT_PASSKEY (&lv_font_montserrat_24)
+#define NOKO_FONT_PASSKEY (&lv_font_montserrat_24)
 #else
-#define BOX_DEMO_FONT_PASSKEY BOX_DEMO_FONT_BODY
+#define NOKO_FONT_PASSKEY NOKO_FONT_BODY
 #endif
 
-#define BOX_DEMO_FONT_ACTION (&lv_font_montserrat_12)
+#define NOKO_FONT_ACTION (&lv_font_montserrat_12)
 
-#define BOX_DEMO_FONT_TITLE (&lv_font_montserrat_16)
-#define BOX_DEMO_FONT_META (&lv_font_montserrat_12)
+#define NOKO_FONT_TITLE (&lv_font_montserrat_16)
+#define NOKO_FONT_META (&lv_font_montserrat_12)
 
 // Idle screen layout for the 360x360 round display. Widgets sit on a
 // vertical centerline so they stay inside the visible circle. The GIF
@@ -72,8 +72,8 @@ static lv_obj_t *s_gif_card;          // y=114, 200x120, centered character zone
 static lv_obj_t *s_gif_obj;
 static lv_obj_t *s_gif_label;
 static lv_obj_t *s_passkey_label;     // takes over gif zone during pairing
-#define BOX_DEMO_TRANSCRIPT_LINES 3
-static lv_obj_t *s_transcript_labels[BOX_DEMO_TRANSCRIPT_LINES];  // y=238/254/270
+#define NOKO_TRANSCRIPT_LINES 3
+static lv_obj_t *s_transcript_labels[NOKO_TRANSCRIPT_LINES];  // y=238/254/270
 static lv_obj_t *s_tokens_label;      // y=290, today's output token count
 static lv_obj_t *s_approval_overlay;
 static lv_obj_t *s_approval_tool_label;
@@ -86,22 +86,22 @@ static lv_obj_t *s_stats_denied_label;
 static lv_obj_t *s_stats_tokens_label;
 static lv_obj_t *s_stats_today_label;
 static lv_obj_t *s_stats_mood_label;
-static box_demo_app_t *s_ui_app;
+static noko_app_t *s_ui_app;
 static char s_gif_pack_id[EXAMPLE_CHARPACK_PACK_ID_MAX + 1];
-static char s_gif_src[BOX_DEMO_GIF_PATH_MAX];
+static char s_gif_src[NOKO_GIF_PATH_MAX];
 
 // On-board LED. Pulses fast when a permission prompt is waiting so the user
 // notices even when looking away from the screen.
 static led_indicator_handle_t s_led_handle;
 static bool s_led_is_attention;
 
-static void box_demo_style_label(lv_obj_t *label, const lv_font_t *font, lv_color_t color)
+static void noko_style_label(lv_obj_t *label, const lv_font_t *font, lv_color_t color)
 {
     lv_obj_set_style_text_font(label, font, 0);
     lv_obj_set_style_text_color(label, color, 0);
 }
 
-static void box_demo_style_card(lv_obj_t *obj, uint32_t bg_color, uint32_t border_color)
+static void noko_style_card(lv_obj_t *obj, uint32_t bg_color, uint32_t border_color)
 {
     lv_obj_set_style_bg_color(obj, lv_color_hex(bg_color), 0);
     lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
@@ -111,7 +111,7 @@ static void box_demo_style_card(lv_obj_t *obj, uint32_t bg_color, uint32_t borde
     lv_obj_set_style_pad_all(obj, 0, 0);
 }
 
-static void box_demo_copy_ellipsized(char *dst,
+static void noko_copy_ellipsized(char *dst,
                                      size_t dst_size,
                                      const char *src,
                                      size_t max_chars)
@@ -147,7 +147,7 @@ static void box_demo_copy_ellipsized(char *dst,
     }
 }
 
-static bool box_demo_path_exists(const char *path)
+static bool noko_path_exists(const char *path)
 {
     struct stat st;
 
@@ -158,7 +158,7 @@ static bool box_demo_path_exists(const char *path)
     return stat(path, &st) == 0 && S_ISREG(st.st_mode);
 }
 
-static bool box_demo_has_gif_suffix(const char *name)
+static bool noko_has_gif_suffix(const char *name)
 {
     size_t len;
 
@@ -174,7 +174,7 @@ static bool box_demo_has_gif_suffix(const char *name)
     return strcasecmp(name + len - 4, ".gif") == 0;
 }
 
-static bool box_demo_pick_gif_asset(const char *pack_id,
+static bool noko_pick_gif_asset(const char *pack_id,
                                     char *asset_name,
                                     size_t asset_name_size)
 {
@@ -186,8 +186,8 @@ static bool box_demo_pick_gif_asset(const char *pack_id,
         "busy.gif",
         "sleep.gif",
     };
-    char candidate_path[BOX_DEMO_GIF_PATH_MAX];
-    char pack_root[BOX_DEMO_GIF_PATH_MAX];
+    char candidate_path[NOKO_GIF_PATH_MAX];
+    char pack_root[NOKO_GIF_PATH_MAX];
     const char *packs_root = CONFIG_EXAMPLE_CHARPACK_PACKS_ROOT;
     DIR *dir;
     struct dirent *entry;
@@ -212,7 +212,7 @@ static bool box_demo_pick_gif_asset(const char *pack_id,
                      preferred_assets[i]) >= (int)sizeof(candidate_path)) {
             continue;
         }
-        if (box_demo_path_exists(candidate_path)) {
+        if (noko_path_exists(candidate_path)) {
             strlcpy(asset_name, preferred_assets[i], asset_name_size);
             return true;
         }
@@ -227,7 +227,7 @@ static bool box_demo_pick_gif_asset(const char *pack_id,
         if (entry->d_name[0] == '.') {
             continue;
         }
-        if (!box_demo_has_gif_suffix(entry->d_name)) {
+        if (!noko_has_gif_suffix(entry->d_name)) {
             continue;
         }
         strlcpy(asset_name, entry->d_name, asset_name_size);
@@ -275,12 +275,12 @@ static buddy_state_t derive_buddy_state(const example_buddy_state_cache_t *sc,
 // Build a LVGL GIF source path "S:packs/<pack>/<filename>" for a specific
 // file. Returns false if the file isn't actually on disk (lets callers try
 // a fallback).
-static bool box_demo_build_named_gif_src(const char *pack_id,
+static bool noko_build_named_gif_src(const char *pack_id,
                                           const char *filename,
                                           char *out_src,
                                           size_t out_src_size)
 {
-    char candidate_path[BOX_DEMO_GIF_PATH_MAX];
+    char candidate_path[NOKO_GIF_PATH_MAX];
     const char *packs_root = CONFIG_EXAMPLE_CHARPACK_PACKS_ROOT;
     const char *mount_point = CONFIG_EXAMPLE_CHARPACK_MOUNT_POINT;
     const char *relative_root = packs_root;
@@ -296,7 +296,7 @@ static bool box_demo_build_named_gif_src(const char *pack_id,
                  packs_root, pack_id, filename) >= (int)sizeof(candidate_path)) {
         return false;
     }
-    if (!box_demo_path_exists(candidate_path)) {
+    if (!noko_path_exists(candidate_path)) {
         return false;
     }
 
@@ -313,11 +313,11 @@ static bool box_demo_build_named_gif_src(const char *pack_id,
                     relative_root, pack_id, filename) < (int)out_src_size;
 }
 
-static bool box_demo_build_gif_src(const char *pack_id,
+static bool noko_build_gif_src(const char *pack_id,
                                    char *out_src,
                                    size_t out_src_size)
 {
-    char asset_name[BOX_DEMO_GIF_PATH_MAX];
+    char asset_name[NOKO_GIF_PATH_MAX];
     const char *packs_root = CONFIG_EXAMPLE_CHARPACK_PACKS_ROOT;
     const char *mount_point = CONFIG_EXAMPLE_CHARPACK_MOUNT_POINT;
     const char *relative_root = packs_root;
@@ -327,7 +327,7 @@ static bool box_demo_build_gif_src(const char *pack_id,
         return false;
     }
 
-    if (!box_demo_pick_gif_asset(pack_id, asset_name, sizeof(asset_name))) {
+    if (!noko_pick_gif_asset(pack_id, asset_name, sizeof(asset_name))) {
         return false;
     }
 
@@ -348,7 +348,7 @@ static bool box_demo_build_gif_src(const char *pack_id,
                     asset_name) < (int)out_src_size;
 }
 
-static void box_demo_ui_set_gif_placeholder(const char *text)
+static void noko_ui_set_gif_placeholder(const char *text)
 {
     lv_gif_set_src(s_gif_obj, NULL);
     lv_obj_add_flag(s_gif_obj, LV_OBJ_FLAG_HIDDEN);
@@ -358,30 +358,30 @@ static void box_demo_ui_set_gif_placeholder(const char *text)
     s_gif_src[0] = '\0';
 }
 
-static void box_demo_ui_update_gif(bool have_active,
+static void noko_ui_update_gif(bool have_active,
                                    const example_charpack_info_t *active_pack,
                                    buddy_state_t desired_state)
 {
 #if CONFIG_LV_USE_GIF
-    char desired_src[BOX_DEMO_GIF_PATH_MAX];
+    char desired_src[NOKO_GIF_PATH_MAX];
     bool got = false;
 
     if (!have_active || active_pack == NULL || active_pack->pack_id[0] == '\0') {
-        box_demo_ui_set_gif_placeholder("No active pack");
+        noko_ui_set_gif_placeholder("No active pack");
         return;
     }
 
     // Prefer the GIF that matches the current buddy state. If that file
     // isn't in the pack, fall back to whatever the generic picker finds
     // so we still show something.
-    got = box_demo_build_named_gif_src(active_pack->pack_id,
+    got = noko_build_named_gif_src(active_pack->pack_id,
                                          buddy_state_filename(desired_state),
                                          desired_src, sizeof(desired_src));
     if (!got) {
-        got = box_demo_build_gif_src(active_pack->pack_id, desired_src, sizeof(desired_src));
+        got = noko_build_gif_src(active_pack->pack_id, desired_src, sizeof(desired_src));
     }
     if (!got) {
-        box_demo_ui_set_gif_placeholder("Pack GIF missing");
+        noko_ui_set_gif_placeholder("Pack GIF missing");
         return;
     }
 
@@ -394,7 +394,7 @@ static void box_demo_ui_update_gif(bool have_active,
     lv_obj_add_flag(s_gif_label, LV_OBJ_FLAG_HIDDEN);
     lv_gif_set_src(s_gif_obj, desired_src);
     if (!lv_gif_is_loaded(s_gif_obj)) {
-        box_demo_ui_set_gif_placeholder("GIF load failed");
+        noko_ui_set_gif_placeholder("GIF load failed");
         return;
     }
 
@@ -405,14 +405,14 @@ static void box_demo_ui_update_gif(bool have_active,
     (void)have_active;
     (void)active_pack;
     (void)desired_state;
-    box_demo_ui_set_gif_placeholder("GIF support off");
+    noko_ui_set_gif_placeholder("GIF support off");
 #endif
 }
 
 // VoCat's two top capacitive touchpads cross-talk badly (touching one fires
 // both). Approve/deny is high-stakes, so we route those decisions through
 // the touchscreen overlay only and leave the touchpads unregistered.
-static void box_demo_send_decision(box_demo_app_t *app,
+static void noko_send_decision(noko_app_t *app,
                                    esp_desktop_buddy_permission_decision_t decision,
                                    const char *label)
 {
@@ -424,7 +424,7 @@ static void box_demo_send_decision(box_demo_app_t *app,
                                        app->transport,
                                        &app->state_cache,
                                        decision) != ESP_OK) {
-        ESP_LOGW("box_demo_ui", "no active prompt for %s tap", label);
+        ESP_LOGW("noko_ui", "no active prompt for %s tap", label);
     }
 }
 
@@ -462,9 +462,9 @@ static const char *mood_word(uint8_t tier)
 
 static uint32_t mood_color(uint8_t tier)
 {
-    if (tier >= 3) return BOX_DEMO_COLOR_ACCENT;   // happy = orange
-    if (tier >= 2) return BOX_DEMO_COLOR_MUTED;    // neutral = gray
-    return BOX_DEMO_COLOR_DENY;                     // sad = red
+    if (tier >= 3) return NOKO_COLOR_ACCENT;   // happy = orange
+    if (tier >= 2) return NOKO_COLOR_MUTED;    // neutral = gray
+    return NOKO_COLOR_DENY;                     // sad = red
 }
 
 // Format a token count as either raw (<1k), "12.3 K", or "1.2 M". Same logic
@@ -482,7 +482,7 @@ static void format_tokens(char *out, size_t out_size, uint64_t t)
 
 // Swipe handler: up shows stats, down hides them. Ignored when the approval
 // overlay is up — don't fight a high-stakes prompt.
-static void box_demo_screen_gesture_cb(lv_event_t *e)
+static void noko_screen_gesture_cb(lv_event_t *e)
 {
     if (!lv_obj_has_flag(s_approval_overlay, LV_OBJ_FLAG_HIDDEN)) {
         return;
@@ -499,23 +499,23 @@ static void box_demo_screen_gesture_cb(lv_event_t *e)
     }
 }
 
-static void box_demo_approval_approve_cb(lv_event_t *e)
+static void noko_approval_approve_cb(lv_event_t *e)
 {
     audio_play(AUDIO_CUE_ACK);
-    box_demo_send_decision((box_demo_app_t *)lv_event_get_user_data(e),
+    noko_send_decision((noko_app_t *)lv_event_get_user_data(e),
                            ESP_DESKTOP_BUDDY_PERMISSION_DECISION_ONCE,
                            "approve");
 }
 
-static void box_demo_approval_deny_cb(lv_event_t *e)
+static void noko_approval_deny_cb(lv_event_t *e)
 {
     audio_play(AUDIO_CUE_DENY);
-    box_demo_send_decision((box_demo_app_t *)lv_event_get_user_data(e),
+    noko_send_decision((noko_app_t *)lv_event_get_user_data(e),
                            ESP_DESKTOP_BUDDY_PERMISSION_DECISION_DENY,
                            "deny");
 }
 
-static void box_demo_copy_or_default(char *dst,
+static void noko_copy_or_default(char *dst,
                                      size_t dst_size,
                                      const char *preferred,
                                      const char *fallback)
@@ -529,18 +529,18 @@ static void box_demo_copy_or_default(char *dst,
     }
 }
 
-static void box_demo_ui_refresh(box_demo_app_t *app)
+static void noko_ui_refresh(noko_app_t *app)
 {
     example_buddy_state_cache_t state_cache = {0};
     esp_desktop_buddy_transport_ble_state_t transport = {0};
     example_charpack_info_t active_pack = {0};
-    char display_name[BOX_DEMO_NAME_MAX];
-    char advertising_name[BOX_DEMO_BLE_NAME_MAX];
-    char owner_name[BOX_DEMO_OWNER_MAX];
+    char display_name[NOKO_NAME_MAX];
+    char advertising_name[NOKO_BLE_NAME_MAX];
+    char owner_name[NOKO_OWNER_MAX];
     bool have_active;
     bool passkey_active;
     bool prompt_active;
-    char title_text[BOX_DEMO_NAME_MAX + BOX_DEMO_OWNER_MAX + 20];
+    char title_text[NOKO_NAME_MAX + NOKO_OWNER_MAX + 20];
     char transport_text[80];
     char sessions_text[64];
     char tokens_text[32];
@@ -571,13 +571,13 @@ static void box_demo_ui_refresh(box_demo_app_t *app)
     // name, owner alone, then a generic label. Keep it short so it fits
     // the circle's chord at y=70 (~280px safe).
     if (owner_name[0] != '\0') {
-        char owner_compact[BOX_DEMO_OWNER_MAX];
-        box_demo_copy_ellipsized(owner_compact, sizeof(owner_compact), owner_name, 14);
+        char owner_compact[NOKO_OWNER_MAX];
+        noko_copy_ellipsized(owner_compact, sizeof(owner_compact), owner_name, 14);
         snprintf(title_text, sizeof(title_text), "Hi %s!", owner_compact);
     } else if (display_name[0] != '\0') {
-        box_demo_copy_ellipsized(title_text, sizeof(title_text), display_name, 14);
+        noko_copy_ellipsized(title_text, sizeof(title_text), display_name, 14);
     } else {
-        strlcpy(title_text, "EchoEar", sizeof(title_text));
+        strlcpy(title_text, "Noko", sizeof(title_text));
     }
 
     // Single-line transport status. Colors: green when ready, muted while
@@ -585,7 +585,7 @@ static void box_demo_ui_refresh(box_demo_app_t *app)
     // the big passkey in the middle.
     if (passkey_active) {
         strlcpy(transport_text, "Pairing: enter code on desktop", sizeof(transport_text));
-        transport_color = lv_color_hex(BOX_DEMO_COLOR_TEXT);
+        transport_color = lv_color_hex(NOKO_COLOR_TEXT);
     } else if (!transport.connected) {
         if (advertising_name[0] != '\0') {
             snprintf(transport_text, sizeof(transport_text),
@@ -593,16 +593,16 @@ static void box_demo_ui_refresh(box_demo_app_t *app)
         } else {
             strlcpy(transport_text, "Waiting for Claude over BLE", sizeof(transport_text));
         }
-        transport_color = lv_color_hex(BOX_DEMO_COLOR_MUTED);
+        transport_color = lv_color_hex(NOKO_COLOR_MUTED);
     } else if (prompt_active) {
         strlcpy(transport_text, "Approval needed", sizeof(transport_text));
-        transport_color = lv_color_hex(BOX_DEMO_COLOR_ACCENT);
+        transport_color = lv_color_hex(NOKO_COLOR_ACCENT);
     } else if (transport.tx_ready) {
         strlcpy(transport_text, "Connected and ready", sizeof(transport_text));
-        transport_color = lv_color_hex(BOX_DEMO_COLOR_ALLOW);
+        transport_color = lv_color_hex(NOKO_COLOR_ALLOW);
     } else {
         strlcpy(transport_text, "Securing channel...", sizeof(transport_text));
-        transport_color = lv_color_hex(BOX_DEMO_COLOR_MUTED);
+        transport_color = lv_color_hex(NOKO_COLOR_MUTED);
     }
 
     if (state_cache.has_state) {
@@ -656,29 +656,29 @@ static void box_demo_ui_refresh(box_demo_app_t *app)
         lv_label_set_text(s_passkey_label, passkey_text);
         lv_obj_clear_flag(s_passkey_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_gif_card, LV_OBJ_FLAG_HIDDEN);
-        for (int i = 0; i < BOX_DEMO_TRANSCRIPT_LINES; i++) {
+        for (int i = 0; i < NOKO_TRANSCRIPT_LINES; i++) {
             lv_obj_add_flag(s_transcript_labels[i], LV_OBJ_FLAG_HIDDEN);
         }
     } else {
         lv_obj_add_flag(s_passkey_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(s_gif_card, LV_OBJ_FLAG_HIDDEN);
         buddy_state_t bs = derive_buddy_state(&state_cache, &transport);
-        box_demo_ui_update_gif(have_active, &active_pack, bs);
+        noko_ui_update_gif(have_active, &active_pack, bs);
 
         // Transcript: SDK delivers entries newest-first. Display chat-style
         // with newest at the bottom line (brighter). Empty slots clear out
         // when older messages roll off the top.
-        for (int i = 0; i < BOX_DEMO_TRANSCRIPT_LINES; i++) {
+        for (int i = 0; i < NOKO_TRANSCRIPT_LINES; i++) {
             lv_obj_clear_flag(s_transcript_labels[i], LV_OBJ_FLAG_HIDDEN);
             // bottom row = newest = entries[0]; row above = entries[1]; ...
-            int entry_idx = (BOX_DEMO_TRANSCRIPT_LINES - 1) - i;
-            bool is_newest = (i == BOX_DEMO_TRANSCRIPT_LINES - 1);
+            int entry_idx = (NOKO_TRANSCRIPT_LINES - 1) - i;
+            bool is_newest = (i == NOKO_TRANSCRIPT_LINES - 1);
             if ((size_t)entry_idx < state_cache.entry_count &&
                 state_cache.entries[entry_idx][0] != '\0') {
                 lv_label_set_text(s_transcript_labels[i], state_cache.entries[entry_idx]);
                 lv_obj_set_style_text_color(s_transcript_labels[i],
-                                            lv_color_hex(is_newest ? BOX_DEMO_COLOR_TEXT
-                                                                    : BOX_DEMO_COLOR_MUTED), 0);
+                                            lv_color_hex(is_newest ? NOKO_COLOR_TEXT
+                                                                    : NOKO_COLOR_MUTED), 0);
             } else {
                 lv_label_set_text(s_transcript_labels[i], "");
             }
@@ -724,7 +724,7 @@ static void box_demo_ui_refresh(box_demo_app_t *app)
         char hint_text[128];
         snprintf(tool_text, sizeof(tool_text), "%s?",
                  state_cache.prompt.tool[0] ? state_cache.prompt.tool : "Approval");
-        box_demo_copy_or_default(hint_text, sizeof(hint_text),
+        noko_copy_or_default(hint_text, sizeof(hint_text),
                                  state_cache.prompt.hint,
                                  state_cache.msg[0] ? state_cache.msg : "");
         lv_label_set_text(s_approval_tool_label, tool_text);
@@ -735,24 +735,24 @@ static void box_demo_ui_refresh(box_demo_app_t *app)
     }
 }
 
-static void box_demo_ui_task(void *arg)
+static void noko_ui_task(void *arg)
 {
-    box_demo_app_t *app = (box_demo_app_t *)arg;
+    noko_app_t *app = (noko_app_t *)arg;
 
     while (true) {
-        if (bsp_display_lock(BOX_DEMO_UI_LOCK_TIMEOUT_MS)) {
-            box_demo_ui_refresh(app);
+        if (bsp_display_lock(NOKO_UI_LOCK_TIMEOUT_MS)) {
+            noko_ui_refresh(app);
             bsp_display_unlock();
         }
-        vTaskDelay(pdMS_TO_TICKS(BOX_DEMO_UI_POLL_MS));
+        vTaskDelay(pdMS_TO_TICKS(NOKO_UI_POLL_MS));
     }
 }
 
-esp_err_t box_demo_ui_init(box_demo_app_t *app)
+esp_err_t noko_ui_init(noko_app_t *app)
 {
     lv_obj_t *scr;
 
-    ESP_RETURN_ON_FALSE(bsp_display_start() != NULL, ESP_FAIL, "box_demo_ui", "display start");
+    ESP_RETURN_ON_FALSE(bsp_display_start() != NULL, ESP_FAIL, "noko_ui", "display start");
     bsp_display_backlight_on();
     s_ui_app = app;
     // Top capacitive touchpads are intentionally left unregistered: the
@@ -765,20 +765,20 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     if (bsp_led_indicator_create(leds, &led_cnt, BSP_LED_NUM) == ESP_OK && led_cnt > 0) {
         s_led_handle = leds[0];
     } else {
-        ESP_LOGW("box_demo_ui", "LED indicator init failed");
+        ESP_LOGW("noko_ui", "LED indicator init failed");
         s_led_handle = NULL;
     }
     s_led_is_attention = false;
 
-    if (!bsp_display_lock(BOX_DEMO_UI_LOCK_TIMEOUT_MS)) {
+    if (!bsp_display_lock(NOKO_UI_LOCK_TIMEOUT_MS)) {
         return ESP_FAIL;
     }
 
     scr = lv_disp_get_scr_act(NULL);
     lv_obj_clean(scr);
-    lv_obj_set_style_bg_color(scr, lv_color_hex(BOX_DEMO_COLOR_BG), 0);
+    lv_obj_set_style_bg_color(scr, lv_color_hex(NOKO_COLOR_BG), 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
-    lv_obj_set_style_text_color(scr, lv_color_hex(BOX_DEMO_COLOR_TEXT), 0);
+    lv_obj_set_style_text_color(scr, lv_color_hex(NOKO_COLOR_TEXT), 0);
 
     // Round-display idle layout: vertical stack down the centerline, sized
     // so each row stays inside the visible circle (radius 180, center 180,180).
@@ -792,15 +792,15 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     s_title_label = lv_label_create(scr);
     lv_obj_set_pos(s_title_label, 20, 40);
     lv_obj_set_size(s_title_label, 320, 30);
-    box_demo_style_label(s_title_label, BOX_DEMO_FONT_PASSKEY, lv_color_hex(BOX_DEMO_COLOR_ACCENT));
+    noko_style_label(s_title_label, NOKO_FONT_PASSKEY, lv_color_hex(NOKO_COLOR_ACCENT));
     lv_obj_set_style_text_align(s_title_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_title_label, LV_LABEL_LONG_DOT);
-    lv_label_set_text(s_title_label, "EchoEar");
+    lv_label_set_text(s_title_label, "Noko");
 
     s_transport_label = lv_label_create(scr);
     lv_obj_set_pos(s_transport_label, 20, 74);
     lv_obj_set_size(s_transport_label, 320, 16);
-    box_demo_style_label(s_transport_label, BOX_DEMO_FONT_META, lv_color_hex(BOX_DEMO_COLOR_MUTED));
+    noko_style_label(s_transport_label, NOKO_FONT_META, lv_color_hex(NOKO_COLOR_MUTED));
     lv_obj_set_style_text_align(s_transport_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_transport_label, LV_LABEL_LONG_DOT);
     lv_label_set_text(s_transport_label, "Waiting for Claude over BLE");
@@ -808,7 +808,7 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     s_sessions_label = lv_label_create(scr);
     lv_obj_set_pos(s_sessions_label, 20, 92);
     lv_obj_set_size(s_sessions_label, 320, 16);
-    box_demo_style_label(s_sessions_label, BOX_DEMO_FONT_META, lv_color_hex(BOX_DEMO_COLOR_MUTED));
+    noko_style_label(s_sessions_label, NOKO_FONT_META, lv_color_hex(NOKO_COLOR_MUTED));
     lv_obj_set_style_text_align(s_sessions_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_sessions_label, LV_LABEL_LONG_DOT);
     lv_label_set_text(s_sessions_label, "");
@@ -816,7 +816,7 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     s_gif_card = lv_obj_create(scr);
     lv_obj_set_pos(s_gif_card, 80, 114);
     lv_obj_set_size(s_gif_card, 200, 120);
-    box_demo_style_card(s_gif_card, BOX_DEMO_COLOR_PANEL_ALT, BOX_DEMO_COLOR_PANEL_ALT);
+    noko_style_card(s_gif_card, NOKO_COLOR_PANEL_ALT, NOKO_COLOR_PANEL_ALT);
     lv_obj_clear_flag(s_gif_card, LV_OBJ_FLAG_SCROLLABLE);
 
     s_gif_obj = lv_gif_create(s_gif_card);
@@ -829,7 +829,7 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     lv_obj_center(s_gif_label);
     lv_label_set_long_mode(s_gif_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(s_gif_label, LV_TEXT_ALIGN_CENTER, 0);
-    box_demo_style_label(s_gif_label, BOX_DEMO_FONT_META, lv_color_hex(BOX_DEMO_COLOR_MUTED));
+    noko_style_label(s_gif_label, NOKO_FONT_META, lv_color_hex(NOKO_COLOR_MUTED));
     lv_label_set_text(s_gif_label, "No active pack");
 
     // Passkey label: hidden by default. During pairing it replaces the GIF
@@ -837,7 +837,7 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     s_passkey_label = lv_label_create(scr);
     lv_obj_set_pos(s_passkey_label, 60, 160);
     lv_obj_set_size(s_passkey_label, 240, 40);
-    box_demo_style_label(s_passkey_label, BOX_DEMO_FONT_PASSKEY, lv_color_hex(BOX_DEMO_COLOR_TEXT));
+    noko_style_label(s_passkey_label, NOKO_FONT_PASSKEY, lv_color_hex(NOKO_COLOR_TEXT));
     lv_obj_set_style_text_align(s_passkey_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(s_passkey_label, "");
     lv_obj_add_flag(s_passkey_label, LV_OBJ_FLAG_HIDDEN);
@@ -845,13 +845,13 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     // Transcript: last few Claude messages, newest at the bottom (chat-like).
     // Oldest dimmed, newest in body color. Stays inside the circle's chord at
     // these y positions (~290 wide at y=270). Truncate with ... on overflow.
-    static const int transcript_y[BOX_DEMO_TRANSCRIPT_LINES] = { 238, 254, 270 };
-    for (int i = 0; i < BOX_DEMO_TRANSCRIPT_LINES; i++) {
+    static const int transcript_y[NOKO_TRANSCRIPT_LINES] = { 238, 254, 270 };
+    for (int i = 0; i < NOKO_TRANSCRIPT_LINES; i++) {
         s_transcript_labels[i] = lv_label_create(scr);
         lv_obj_set_pos(s_transcript_labels[i], 35, transcript_y[i]);
         lv_obj_set_size(s_transcript_labels[i], 290, 14);
-        box_demo_style_label(s_transcript_labels[i], BOX_DEMO_FONT_META,
-                             lv_color_hex(BOX_DEMO_COLOR_MUTED));
+        noko_style_label(s_transcript_labels[i], NOKO_FONT_META,
+                             lv_color_hex(NOKO_COLOR_MUTED));
         lv_obj_set_style_text_align(s_transcript_labels[i], LV_TEXT_ALIGN_CENTER, 0);
         lv_label_set_long_mode(s_transcript_labels[i], LV_LABEL_LONG_DOT);
         lv_label_set_text(s_transcript_labels[i], "");
@@ -862,7 +862,7 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     s_tokens_label = lv_label_create(scr);
     lv_obj_set_pos(s_tokens_label, 50, 290);
     lv_obj_set_size(s_tokens_label, 260, 14);
-    box_demo_style_label(s_tokens_label, BOX_DEMO_FONT_META, lv_color_hex(BOX_DEMO_COLOR_MUTED));
+    noko_style_label(s_tokens_label, NOKO_FONT_META, lv_color_hex(NOKO_COLOR_MUTED));
     lv_obj_set_style_text_align(s_tokens_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_tokens_label, LV_LABEL_LONG_DOT);
     lv_label_set_text(s_tokens_label, "");
@@ -875,7 +875,7 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     s_approval_overlay = lv_obj_create(scr);
     lv_obj_set_size(s_approval_overlay, 360, 360);
     lv_obj_set_pos(s_approval_overlay, 0, 0);
-    lv_obj_set_style_bg_color(s_approval_overlay, lv_color_hex(BOX_DEMO_COLOR_BG), 0);
+    lv_obj_set_style_bg_color(s_approval_overlay, lv_color_hex(NOKO_COLOR_BG), 0);
     lv_obj_set_style_bg_opa(s_approval_overlay, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(s_approval_overlay, 0, 0);
     lv_obj_set_style_pad_all(s_approval_overlay, 0, 0);
@@ -886,41 +886,41 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     lv_obj_t *approve_btn = lv_obj_create(s_approval_overlay);
     lv_obj_set_size(approve_btn, 360, 160);
     lv_obj_set_pos(approve_btn, 0, 0);
-    lv_obj_set_style_bg_color(approve_btn, lv_color_hex(BOX_DEMO_COLOR_APPROVE_BG), 0);
+    lv_obj_set_style_bg_color(approve_btn, lv_color_hex(NOKO_COLOR_APPROVE_BG), 0);
     lv_obj_set_style_bg_opa(approve_btn, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(approve_btn, 0, 0);
     lv_obj_set_style_radius(approve_btn, 0, 0);
     lv_obj_set_style_pad_all(approve_btn, 0, 0);
     lv_obj_clear_flag(approve_btn, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(approve_btn, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(approve_btn, box_demo_approval_approve_cb, LV_EVENT_CLICKED, s_ui_app);
+    lv_obj_add_event_cb(approve_btn, noko_approval_approve_cb, LV_EVENT_CLICKED, s_ui_app);
 
     lv_obj_t *approve_lbl = lv_label_create(approve_btn);
     lv_obj_center(approve_lbl);
-    box_demo_style_label(approve_lbl, BOX_DEMO_FONT_PASSKEY, lv_color_hex(BOX_DEMO_COLOR_ON_DARK));
+    noko_style_label(approve_lbl, NOKO_FONT_PASSKEY, lv_color_hex(NOKO_COLOR_ON_DARK));
     lv_label_set_text(approve_lbl, "APPROVE");
 
     lv_obj_t *deny_btn = lv_obj_create(s_approval_overlay);
     lv_obj_set_size(deny_btn, 360, 160);
     lv_obj_set_pos(deny_btn, 0, 200);
-    lv_obj_set_style_bg_color(deny_btn, lv_color_hex(BOX_DEMO_COLOR_DENY_BG), 0);
+    lv_obj_set_style_bg_color(deny_btn, lv_color_hex(NOKO_COLOR_DENY_BG), 0);
     lv_obj_set_style_bg_opa(deny_btn, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(deny_btn, 0, 0);
     lv_obj_set_style_radius(deny_btn, 0, 0);
     lv_obj_set_style_pad_all(deny_btn, 0, 0);
     lv_obj_clear_flag(deny_btn, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(deny_btn, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(deny_btn, box_demo_approval_deny_cb, LV_EVENT_CLICKED, s_ui_app);
+    lv_obj_add_event_cb(deny_btn, noko_approval_deny_cb, LV_EVENT_CLICKED, s_ui_app);
 
     lv_obj_t *deny_lbl = lv_label_create(deny_btn);
     lv_obj_center(deny_lbl);
-    box_demo_style_label(deny_lbl, BOX_DEMO_FONT_PASSKEY, lv_color_hex(BOX_DEMO_COLOR_ON_DARK));
+    noko_style_label(deny_lbl, NOKO_FONT_PASSKEY, lv_color_hex(NOKO_COLOR_ON_DARK));
     lv_label_set_text(deny_lbl, "DENY");
 
     s_approval_tool_label = lv_label_create(s_approval_overlay);
     lv_obj_set_pos(s_approval_tool_label, 0, 166);
     lv_obj_set_size(s_approval_tool_label, 360, 18);
-    box_demo_style_label(s_approval_tool_label, BOX_DEMO_FONT_TITLE, lv_color_hex(BOX_DEMO_COLOR_TEXT));
+    noko_style_label(s_approval_tool_label, NOKO_FONT_TITLE, lv_color_hex(NOKO_COLOR_TEXT));
     lv_obj_set_style_text_align(s_approval_tool_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_approval_tool_label, LV_LABEL_LONG_DOT);
     lv_label_set_text(s_approval_tool_label, "");
@@ -928,7 +928,7 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     s_approval_hint_label = lv_label_create(s_approval_overlay);
     lv_obj_set_pos(s_approval_hint_label, 30, 184);
     lv_obj_set_size(s_approval_hint_label, 300, 14);
-    box_demo_style_label(s_approval_hint_label, BOX_DEMO_FONT_META, lv_color_hex(BOX_DEMO_COLOR_MUTED));
+    noko_style_label(s_approval_hint_label, NOKO_FONT_META, lv_color_hex(NOKO_COLOR_MUTED));
     lv_obj_set_style_text_align(s_approval_hint_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_approval_hint_label, LV_LABEL_LONG_DOT);
     lv_label_set_text(s_approval_hint_label, "");
@@ -939,7 +939,7 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     s_stats_overlay = lv_obj_create(scr);
     lv_obj_set_size(s_stats_overlay, 360, 360);
     lv_obj_set_pos(s_stats_overlay, 0, 0);
-    lv_obj_set_style_bg_color(s_stats_overlay, lv_color_hex(BOX_DEMO_COLOR_BG), 0);
+    lv_obj_set_style_bg_color(s_stats_overlay, lv_color_hex(NOKO_COLOR_BG), 0);
     lv_obj_set_style_bg_opa(s_stats_overlay, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(s_stats_overlay, 0, 0);
     lv_obj_set_style_pad_all(s_stats_overlay, 0, 0);
@@ -950,7 +950,7 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     lv_obj_t *stats_header = lv_label_create(s_stats_overlay);
     lv_obj_set_pos(stats_header, 0, 48);
     lv_obj_set_size(stats_header, 360, 22);
-    box_demo_style_label(stats_header, BOX_DEMO_FONT_TITLE, lv_color_hex(BOX_DEMO_COLOR_MUTED));
+    noko_style_label(stats_header, NOKO_FONT_TITLE, lv_color_hex(NOKO_COLOR_MUTED));
     lv_obj_set_style_text_align(stats_header, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(stats_header, "STATS");
 
@@ -958,8 +958,8 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     s_stats_level_badge = lv_label_create(s_stats_overlay);
     lv_obj_set_pos(s_stats_level_badge, 130, 84);
     lv_obj_set_size(s_stats_level_badge, 100, 36);
-    box_demo_style_label(s_stats_level_badge, BOX_DEMO_FONT_PASSKEY, lv_color_hex(BOX_DEMO_COLOR_BG));
-    lv_obj_set_style_bg_color(s_stats_level_badge, lv_color_hex(BOX_DEMO_COLOR_ACCENT), 0);
+    noko_style_label(s_stats_level_badge, NOKO_FONT_PASSKEY, lv_color_hex(NOKO_COLOR_BG));
+    lv_obj_set_style_bg_color(s_stats_level_badge, lv_color_hex(NOKO_COLOR_ACCENT), 0);
     lv_obj_set_style_bg_opa(s_stats_level_badge, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(s_stats_level_badge, 14, 0);
     lv_obj_set_style_pad_all(s_stats_level_badge, 4, 0);
@@ -983,15 +983,15 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
         lv_obj_t *lbl = lv_label_create(s_stats_overlay);
         lv_obj_set_pos(lbl, 80, rows[i].y);
         lv_obj_set_size(lbl, 100, 18);
-        box_demo_style_label(lbl, BOX_DEMO_FONT_BODY, lv_color_hex(BOX_DEMO_COLOR_MUTED));
+        noko_style_label(lbl, NOKO_FONT_BODY, lv_color_hex(NOKO_COLOR_MUTED));
         lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_LEFT, 0);
         lv_label_set_text(lbl, rows[i].label);
 
         *rows[i].value_handle = lv_label_create(s_stats_overlay);
         lv_obj_set_pos(*rows[i].value_handle, 190, rows[i].y);
         lv_obj_set_size(*rows[i].value_handle, 100, 18);
-        box_demo_style_label(*rows[i].value_handle, BOX_DEMO_FONT_BODY,
-                             lv_color_hex(BOX_DEMO_COLOR_TEXT));
+        noko_style_label(*rows[i].value_handle, NOKO_FONT_BODY,
+                             lv_color_hex(NOKO_COLOR_TEXT));
         lv_obj_set_style_text_align(*rows[i].value_handle, LV_TEXT_ALIGN_RIGHT, 0);
         lv_label_set_text(*rows[i].value_handle, "0");
     }
@@ -999,13 +999,13 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     lv_obj_t *swipe_hint = lv_label_create(s_stats_overlay);
     lv_obj_set_pos(swipe_hint, 0, 286);
     lv_obj_set_size(swipe_hint, 360, 14);
-    box_demo_style_label(swipe_hint, BOX_DEMO_FONT_META, lv_color_hex(BOX_DEMO_COLOR_MUTED));
+    noko_style_label(swipe_hint, NOKO_FONT_META, lv_color_hex(NOKO_COLOR_MUTED));
     lv_obj_set_style_text_align(swipe_hint, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(swipe_hint, "swipe down to close");
 
     // Listen for gestures on the active screen — swipe up from idle shows
     // stats, swipe down hides them.
-    lv_obj_add_event_cb(scr, box_demo_screen_gesture_cb, LV_EVENT_GESTURE, NULL);
+    lv_obj_add_event_cb(scr, noko_screen_gesture_cb, LV_EVENT_GESTURE, NULL);
 
     s_gif_pack_id[0] = '\0';
     s_gif_src[0] = '\0';
@@ -1014,7 +1014,7 @@ esp_err_t box_demo_ui_init(box_demo_app_t *app)
     return ESP_OK;
 }
 
-void box_demo_ui_start(box_demo_app_t *app)
+void noko_ui_start(noko_app_t *app)
 {
-    xTaskCreate(box_demo_ui_task, "box_demo_ui", BOX_DEMO_UI_STACK, app, 4, NULL);
+    xTaskCreate(noko_ui_task, "noko_ui", NOKO_UI_STACK, app, 4, NULL);
 }
