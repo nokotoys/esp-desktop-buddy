@@ -1,0 +1,19 @@
+{
+  "name": "noko",
+  "colors": {
+    "body": "#B19CD9",
+    "bg": "#000000",
+    "text": "#FFFFFF",
+    "textDim": "#9CA3AF",
+    "ink": "#000000"
+  },
+  "states": {
+    "sleep": "sleep.gif",
+    "idle": "idle_0.gif",
+    "busy": "busy.gif",
+    "attention": "attention.gif",
+    "celebrate": "celebrate.gif",
+    "dizzy": "dizzy.gif",
+    "heart": "heart.gif"
+  }
+}
