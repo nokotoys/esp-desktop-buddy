@@ -21,8 +21,8 @@ This repository implements the [`protocol`](https://github.com/anthropics/claude
       <a href="examples/esp_box_3_demo/README.md"><strong>ESP32-S3-BOX-3</strong></a>
     </td>
     <td align="center">
-      <a href="docs/static/noko-demo.png">
-        <img src="docs/static/noko-demo.png" alt="Noko character on the ESP-VoCat round display, an ambient Desktop Buddy" width="280">
+      <a href="docs/static/noko-demo.jpeg">
+        <img src="docs/static/noko-demo.jpeg" alt="Noko character on the ESP-VoCat round display, an ambient Desktop Buddy" width="280">
       </a>
       <br>
       <a href="examples/noko_demo/README.md"><strong>Noko (ESP-VoCat / EchoEar)</strong></a>
